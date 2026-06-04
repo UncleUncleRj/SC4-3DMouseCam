@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros">
+    <STEAMAPPS>C:\Program Files (x86)\Steam\steamapps\</STEAMAPPS>
+    <PLUGINS_FOLDER>$(USERPROFILE)\Documents\SimCity 4\Plugins\</PLUGINS_FOLDER>
+  </PropertyGroup>
+  <PropertyGroup />
+  <ItemDefinitionGroup />
+  <ItemGroup>
+    <BuildMacro Include="STEAMAPPS">
+      <Value>$(STEAMAPPS)</Value>
+      <EnvironmentVariable>true</EnvironmentVariable>
+    </BuildMacro>
+    <BuildMacro Include="PLUGINS_FOLDER">
+      <Value>$(PLUGINS_FOLDER)</Value>
+      <EnvironmentVariable>true</EnvironmentVariable>
+    </BuildMacro>
+  </ItemGroup>
+</Project>

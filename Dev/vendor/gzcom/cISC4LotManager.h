@@ -1,0 +1,73 @@
+/*
+ * gzcom-dll - an open-source DLL Plugin SDK for SimCity 4
+ *
+ * cISC4LotManager.h
+ *
+ * Copyright (C) 2016 Nelson Gomez
+ * Copyright (C) 2024, 2025, 2026 Nicholas Hayes
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation, under
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, see <https://www.gnu.org/licenses/>.
+ */
+
+#pragma once
+#include "cIGZUnknown.h"
+#include "SC4Rect.h"
+
+
+class cISC4Lot;
+class cISC4LotConfiguration;
+class cISC4Occupant;
+class cS3DVector3;
+
+template<typename T> class cISC4SimGrid;
+template<typename T> class SC4List;
+
+class cISC4LotManager : public cIGZUnknown
+{
+	public:
+		virtual bool Init(void) = 0;
+		virtual bool Shutdown(void) = 0;
+
+		virtual cISC4Lot* GetLot(int32_t nCellX, int32_t nCellZ, bool bUnknown) = 0;
+		virtual cISC4Lot* GetLot(cS3DVector3 const& sPoint) = 0;
+
+		virtual bool GetLotsInCellRect(SC4List<cISC4Lot*>& sLotList, int32_t nTopLeftCellX, int32_t nTopLeftCellZ, int32_t nBottomRightCellX, int32_t nBottomRightCellZ, bool bUnknown) = 0;
+		virtual bool GetLotsSurroundingLot(cISC4Lot const* pLot, SC4List<cISC4Lot*>& sList, int32_t nFlags) = 0;
+		virtual bool GetLotsSurroundingLot(int32_t nCellX, int32_t nCellZ, SC4List<cISC4Lot*>& sList, int32_t nFlags) = 0;
+		virtual bool GetLotsSurroundingRect(SC4Rect<long> const& sRect, SC4List<cISC4Lot*>& sList, int32_t nFlags) = 0;
+		virtual bool GetVerticesAtEdgeOfLot(SC4Rect<long> const& sLotCells, int32_t nFlags, SC4Rect<long>& sVertices) = 0;
+		virtual bool GetNeighborCellsAtEdgeOfLot(SC4Rect<long> const& sLotCells, int32_t nFlags, SC4Rect<long>& sCells) = 0;
+
+		virtual cISC4Lot* GetRandomLot(void) = 0;
+		virtual cISC4Lot* GetOccupantLot(cISC4Occupant* pOccupant) = 0;
+		virtual intptr_t GetSafeLotIterator(void) = 0;
+
+		virtual int32_t GetLotCount(void) = 0;
+
+		virtual int32_t GetLotSavvyTerrainVertexAltitude(int32_t nPointX, int32_t nPointY, cISC4Lot* pLot, bool& bSucceeded) = 0;
+		virtual int32_t GetLotSavvyTerrainAltitude(float fPointX, float fPointY, bool& bSucceeded) = 0;
+		virtual int32_t GetLotSavvyCellAltitude(int32_t nCellX, int32_t nCellZ, bool& bSucceeded) = 0;
+
+		virtual int32_t CanCreateLot(int32_t nTopLeftCellX, int32_t nTopLeftCellZ, int32_t nLotWidth, int32_t nLotHeight, bool bZoneNotNeeded, bool bIgnoreConfig, cISC4LotConfiguration* pConfig) = 0;
+		virtual int32_t CanCreatePloppedLot(SC4Rect<long> sBounds, int32_t nUnknown, cISC4LotConfiguration* pConfig) = 0;
+
+		virtual bool CreateLotIfPossible(int32_t nTopLeftCellX, int32_t nTopLeftCellZ, int32_t nLotWidth, int32_t nLotHeight, int32_t nUnknown, bool bZoneNotNeeded, bool bIgnoreConfig, cISC4LotConfiguration* pConfig) = 0;
+		virtual bool CreateLot(int32_t nTopLeftCellX, int32_t nTopLeftCellZ, int32_t nLotWidth, int32_t nLotHeight, int32_t nFacing, cISC4Lot*& pLot) = 0;
+		virtual bool DeleteLot(cISC4Lot* pLot) = 0;
+		virtual bool DeleteLots(int32_t nTopLeftCellX, int32_t nTopLeftCellZ, int32_t nBottomRightCellX, int32_t nBottomRightCellZ) = 0;
+
+		virtual bool GetLotVertexAltitudeAdjustmentRange(int32_t nCellX, int32_t nCellZ, float& fRangeX, float& fRangeY) = 0;
+
+		virtual cISC4SimGrid<short>* GetMaximumCapacityGrid(void) = 0;
+};

@@ -1,0 +1,101 @@
+/*
+ * gzcom-dll - an open-source DLL Plugin SDK for SimCity 4
+ *
+ * cISC4Simulator.h
+ *
+ * Copyright (C) 2016 Nelson Gomez
+ * Copyright (C) 2023, 2024, 2025 Nicholas Hayes
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation, under
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, see <https://www.gnu.org/licenses/>.
+ */
+
+#pragma once
+#include "cIGZUnknown.h"
+
+class cIGZDate;
+class cIGZMessageTarget2;
+class cIGZString;
+class SC4String;
+template <typename T> class SC4Vector;
+
+class cISC4Simulator : public cIGZUnknown
+{
+	public:
+		// These values correspond to the kSC4MessageSim* messages starting with
+		// kSC4MessageSimBegin/OneShot and ending with kSC4MessageSimIdle.
+		enum eAgentType : uint32_t
+		{
+			AgentTypeSimBegin = 0,
+			AgentTypeSimEmergencyTime = 1,
+			AgentTypeSimNewMinute = 2,
+			AgentTypeSimNewHour = 3,
+			AgentTypeSimNewDay = 4,
+			AgentTypeSimNewWeek = 5,
+			AgentTypeSimNewMonth = 6,
+			AgentTypeSimNewYear = 7,
+			AgentTypeSimSpecificDay = 8,
+			AgentTypeSimSpecificTime = 9,
+			AgentTypeSimIdle = 10,
+		};
+
+		enum eAgentFlags : uint32_t
+		{
+			AgentFlagNone = 0,
+			AgentFlagEnabledForUnestablishedCities = 1,
+			AgentFlagEnabledForEstablishedCities = 2
+		};
+
+		virtual bool Init(void) = 0;
+		virtual bool Shutdown(void) = 0;
+
+		virtual bool GetSimStartDate(cIGZDate& sDate) = 0;
+
+		virtual cIGZDate* GetSimDate(void) = 0;
+		virtual void GetSimDate(uint32_t* year, uint32_t* month, uint32_t* day, uint32_t* dayOfYear, uint32_t* weekDay) = 0;
+		virtual int32_t GetSimDateNumber(void) = 0;
+
+		virtual bool Pause(void) = 0;
+		virtual bool HiddenPause(void) = 0;
+		virtual bool EmergencyPause(void) = 0;
+
+		virtual bool Resume(void) = 0;
+		virtual bool HiddenResume(void) = 0;
+		virtual bool EmergencyResume(void) = 0;
+
+		virtual bool IsPaused(void) = 0;
+		virtual bool IsHiddenPaused(void) = 0;
+		virtual bool IsEmergencyPaused(void) = 0;
+		virtual bool IsAnyPaused(void) = 0;
+
+		virtual bool AddAgent(cIGZMessageTarget2* pAgent, eAgentType agentType, cIGZString const& szAgentName, eAgentFlags flags) = 0;
+		virtual bool RemoveAgent(cIGZMessageTarget2* pAgent, eAgentType agentType) = 0;
+		virtual bool RemoveAgent(cIGZMessageTarget2* pAgent) = 0;
+		virtual bool RemoveAllAgents(void) = 0;
+		virtual bool RemoveAllAgents(eAgentType agentType) = 0;
+		virtual bool EnumerateAgentsByName(SC4Vector<SC4String>& sAgents) = 0;
+		virtual bool GetAgentEnabled(cIGZString const& szAgentName) = 0;
+		virtual bool SetAgentEnabled(cIGZString const& szAgentName, bool bEnabled) = 0;
+
+		virtual int32_t GetSimSpeed(void) = 0;
+		virtual bool SetSimSpeed(int32_t lSpeed) = 0;
+
+		virtual int32_t GetSimTime(void) = 0;
+		virtual bool SetSimTime(int32_t lTime) = 0;
+
+		virtual bool SetMaxMillisecondsPerTick(uint32_t dwTime) = 0;
+
+		virtual float GetAnimationTimeDilation(void) = 0;
+
+		virtual bool SetCityEstablished(bool bEstablished) = 0;
+};

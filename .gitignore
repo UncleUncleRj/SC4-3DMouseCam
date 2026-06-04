@@ -32,3 +32,17 @@
 *.exe
 *.out
 *.app
+
+# Visual Studio / Build
+.vs/
+*.user
+*.suo
+Debug/
+Release/
+Dev/build/
+Dev/Debug/
+Dev/Release/
+*.pdb
+*.ilk
+*.exp
+*.log
