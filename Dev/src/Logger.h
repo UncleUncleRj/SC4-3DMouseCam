@@ -7,6 +7,7 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+#include <filesystem>
 
 enum class LogLevel {
 	Info,
@@ -26,6 +27,19 @@ public:
 		if (m_out.is_open()) {
 			m_out.close();
 		}
+
+		std::filesystem::path path(logFilePath);
+		std::filesystem::path backupPath = path;
+		backupPath.replace_extension(".last");
+
+		std::error_code ec;
+		if (std::filesystem::exists(path)) {
+			if (std::filesystem::exists(backupPath)) {
+				std::filesystem::remove(backupPath, ec);
+			}
+			std::filesystem::rename(path, backupPath, ec);
+		}
+
 		m_out.open(logFilePath, std::ios_base::out | std::ios_base::trunc);
 	}
 

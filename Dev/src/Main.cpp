@@ -5,15 +5,81 @@
 #include "cIGZMessageTarget2.h"
 #include "cIGZMessage2Standard.h"
 #include "GZServPtrs.h"
+#include "cISC4App.h"
+#include "cIGZWin.h"
+#include "cISC4View3DWin.h"
+#include "cISC43DRender.h"
+// SC4 Native Structs for Memory Patching
+class cS3DCamera {
+public:
+    void* vtable;
+    intptr_t unknown[0x8D];
+};
+
+class cSC4CameraControl {
+public:
+    void* vtable;
+    intptr_t unknown[0x45];
+    float_t yaw;
+    float_t pitch;
+};
+#include <cstdlib>
 
 static constexpr uint32_t kSC4MessagePostCityInit = 0x26D31EC1;
 static constexpr uint32_t kSC4MessagePreCityShutdown = 0x26D31EC2;
+static constexpr uint32_t kGZWin_WinSC4App = 0x6104489a;
+static constexpr uint32_t kGZWin_SC4View3DWin = 0x9a47b417;
 
 // Global State
 bool g_IsCityLoaded = false;
 HHOOK g_MouseHook = NULL;
 HHOOK g_KeyboardHook = NULL;
 bool g_KeyState[256] = { false };
+
+// Memory Addresses from sc4-3d-camera-dll for Pitch and Yaw
+static constexpr uint32_t pitchAddress1 = 0xabcfd8;
+static constexpr uint32_t pitchAddress2 = 0xabaccc;
+static constexpr uint32_t yawAddress0 = 0x7ccb0a;
+static constexpr uint32_t yawAddress1 = 0xabcfc4;
+static constexpr uint32_t yawAddress2 = 0xabacb8;
+
+// Cinematic Camera State
+bool g_IsMiddleMouseDown = false;
+POINT g_LastMousePos = { 0, 0 };
+float g_CurrentPitch = 0.52359879f; // Default SC4 Zoom 1 pitch
+float g_CurrentYaw = -0.39269909f;  // Default SC4 yaw
+
+typedef bool(__thiscall* pfn_cSC4CameraControl_UpdateCameraPosition)(cSC4CameraControl* pThis, uint32_t updateMode);
+static pfn_cSC4CameraControl_UpdateCameraPosition UpdateCameraPosition = reinterpret_cast<pfn_cSC4CameraControl_UpdateCameraPosition>(0x7ccf80);
+
+void OverwriteMemoryFloat(uintptr_t address, float newValue) {
+    DWORD oldProtect;
+    if (VirtualProtect(reinterpret_cast<void*>(address), sizeof(float), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        *reinterpret_cast<float*>(address) = newValue;
+        VirtualProtect(reinterpret_cast<void*>(address), sizeof(float), oldProtect, &oldProtect);
+    }
+}
+
+void UpdateCameraPitchYaw(float pitchDelta, float yawDelta) {
+    g_CurrentPitch += pitchDelta;
+    g_CurrentYaw += yawDelta;
+
+    // Clamp pitch between ~15 degrees and ~85 degrees so we don't flip the camera upside down
+    if (g_CurrentPitch < 0.261f) g_CurrentPitch = 0.261f;
+    if (g_CurrentPitch > 1.483f) g_CurrentPitch = 1.483f;
+
+    // Overwrite the game's internal camera floats
+    for (int i = 0; i < 5; i++) {
+        OverwriteMemoryFloat(pitchAddress1 + i * 4, g_CurrentPitch);
+        OverwriteMemoryFloat(pitchAddress2 + i * 4, g_CurrentPitch);
+    }
+    
+    OverwriteMemoryFloat(yawAddress0, g_CurrentYaw);
+    for (int i = 0; i < 5; i++) {
+        OverwriteMemoryFloat(yawAddress1 + i * 4, g_CurrentYaw);
+        OverwriteMemoryFloat(yawAddress2 + i * 4, g_CurrentYaw);
+    }
+}
 
 std::string GetKeyName(DWORD vkCode) {
     switch (vkCode) {
@@ -34,26 +100,93 @@ std::string GetKeyName(DWORD vkCode) {
 
 LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode >= 0 && g_IsCityLoaded) {
-        // Only log if SC4 is the active window
         DWORD fgPid = 0;
         GetWindowThreadProcessId(GetForegroundWindow(), &fgPid);
         if (fgPid == GetCurrentProcessId()) {
             MSLLHOOKSTRUCT* pMouse = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
             Logger& log = Logger::GetInstance();
-            
-            std::string coords = " -- (X: " + std::to_string(pMouse->pt.x) + ", Y: " + std::to_string(pMouse->pt.y) + ")";
 
             switch (wParam) {
-                case WM_LBUTTONDOWN: log.WriteLine(LogLevel::Info, "Mouse 1 (Left) Pressed" + coords); break;
-                case WM_LBUTTONUP:   log.WriteLine(LogLevel::Info, "Mouse 1 (Left) Released" + coords); break;
-                case WM_RBUTTONDOWN: log.WriteLine(LogLevel::Info, "Mouse 2 (Right) Pressed" + coords); break;
-                case WM_RBUTTONUP:   log.WriteLine(LogLevel::Info, "Mouse 2 (Right) Released" + coords); break;
-                case WM_MBUTTONDOWN: log.WriteLine(LogLevel::Info, "Mouse 3 (Middle) Pressed" + coords); break;
-                case WM_MBUTTONUP:   log.WriteLine(LogLevel::Info, "Mouse 3 (Middle) Released" + coords); break;
+                case WM_MBUTTONDOWN: {
+                    g_IsMiddleMouseDown = true;
+                    g_LastMousePos = pMouse->pt;
+                    break;
+                }
+                case WM_MBUTTONUP: {
+                    g_IsMiddleMouseDown = false;
+                    break;
+                }
+                case WM_MOUSEMOVE: {
+                    if (g_IsMiddleMouseDown) {
+                        int deltaX = pMouse->pt.x - g_LastMousePos.x;
+                        int deltaY = pMouse->pt.y - g_LastMousePos.y;
+
+                        // Calculate rotation deltas (adjust multipliers for sensitivity)
+                        float yawDelta = static_cast<float>(deltaX) * 0.005f;
+                        float pitchDelta = static_cast<float>(deltaY) * 0.005f;
+
+                        UpdateCameraPitchYaw(pitchDelta, yawDelta);
+
+                        // Trigger visual update properly using internal engine call
+                        cISC4AppPtr pSC4App;
+                        if (pSC4App) {
+                            cIGZWin* mainWindow = pSC4App->GetMainWindow();
+                            if (mainWindow) {
+                                cIGZWin* pParentWin = mainWindow->GetChildWindowFromID(kGZWin_WinSC4App);
+                                if (pParentWin) {
+                                    cISC4View3DWin* pView3D = nullptr;
+                                    if (pParentWin->GetChildAs(kGZWin_SC4View3DWin, kGZIID_cISC4View3DWin, reinterpret_cast<void**>(&pView3D))) {
+                                        cISC43DRender* renderer = pView3D->GetRenderer();
+                                        if (renderer) {
+                                            cSC4CameraControl* pCamControl = renderer->GetCameraControl();
+                                            if (pCamControl) {
+                                                // Sync the struct's internal state
+                                                pCamControl->yaw = g_CurrentYaw;
+                                                // Call the internal game engine function to safely update the matrices and view boundaries!
+                                                UpdateCameraPosition(pCamControl, 2); 
+                                            }
+                                        }
+                                        pView3D->Release();
+                                    }
+                                }
+                            }
+                        }
+
+                        g_LastMousePos = pMouse->pt;
+                    }
+                    break;
+                }
                 case WM_MOUSEWHEEL: {
                     short zDelta = HIWORD(pMouse->mouseData);
-                    if (zDelta > 0) log.WriteLine(LogLevel::Info, "Mouse Wheel Up" + coords);
-                    else log.WriteLine(LogLevel::Info, "Mouse Wheel Down" + coords);
+                    
+                    // The "Reverse Arch Down to Street Level" logic
+                    // When scrolling, we tie the Pitch to the scroll delta to simulate an arching dive
+                    float pitchArchDelta = (zDelta > 0) ? -0.08f : 0.08f; 
+                    UpdateCameraPitchYaw(pitchArchDelta, 0.0f);
+
+                    cISC4AppPtr pSC4App;
+                    if (pSC4App) {
+                        cIGZWin* mainWindow = pSC4App->GetMainWindow();
+                        if (mainWindow) {
+                            cIGZWin* pParentWin = mainWindow->GetChildWindowFromID(kGZWin_WinSC4App);
+                            if (pParentWin) {
+                                cISC4View3DWin* pView3D = nullptr;
+                                if (pParentWin->GetChildAs(kGZWin_SC4View3DWin, kGZIID_cISC4View3DWin, reinterpret_cast<void**>(&pView3D))) {
+                                    cISC43DRender* renderer = pView3D->GetRenderer();
+                                    if (renderer) {
+                                        cSC4CameraControl* pCamControl = renderer->GetCameraControl();
+                                        if (pCamControl) {
+                                            UpdateCameraPosition(pCamControl, 2);
+                                        }
+                                    }
+                                    pView3D->Release();
+                                }
+                            }
+                        }
+                    }
+                    
+                    // We DO NOT return 1 here anymore. We WANT the game's internal DirectInput 
+                    // to execute the standard 5-step zoom while we alter the pitch to create the arch.
                     break;
                 }
             }
@@ -131,7 +264,16 @@ public:
 
 	bool OnStart(cIGZCOM* pCOM) override
 	{
-		Logger::GetInstance().Initialize("C:\\Users\\minus\\Documents\\SimCity 4\\Plugins\\SC4-3DMouseCam.log");
+		char* userProfile = nullptr;
+		size_t len = 0;
+		_dupenv_s(&userProfile, &len, "USERPROFILE");
+		
+		std::string logPath = "SC4-3DMouseCam.log";
+		if (userProfile) {
+			logPath = std::string(userProfile) + "\\Documents\\SimCity 4\\Plugins\\SC4-3DMouseCam.log";
+			free(userProfile);
+		}
+		Logger::GetInstance().Initialize(logPath);
 		Logger::GetInstance().WriteLine(LogLevel::Info, "Plugin Loaded. Waiting for city to load...");
 
         // Register to receive messages from the game
