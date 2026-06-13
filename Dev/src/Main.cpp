@@ -57,15 +57,8 @@ static pfn_cSC4CameraControl_UpdateCameraPosition UpdateCameraPosition = reinter
 void OverwriteMemoryFloat(uintptr_t address, float newValue) {
     DWORD oldProtect;
     if (VirtualProtect(reinterpret_cast<void*>(address), sizeof(float), PAGE_EXECUTE_READWRITE, &oldProtect)) {
-        float oldValue = *reinterpret_cast<float*>(address);
         *reinterpret_cast<float*>(address) = newValue;
         VirtualProtect(reinterpret_cast<void*>(address), sizeof(float), oldProtect, &oldProtect);
-        
-        if (oldValue != newValue) {
-            char hexAddr[32];
-            sprintf_s(hexAddr, sizeof(hexAddr), "0x%X", address);
-            Logger::GetInstance().WriteLine(LogLevel::Info, std::string("Memory Patch [") + hexAddr + "]: " + std::to_string(oldValue) + " -> " + std::to_string(newValue));
-        }
     } else {
         char hexAddr[32];
         sprintf_s(hexAddr, sizeof(hexAddr), "0x%X", address);
@@ -194,8 +187,6 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
                         int deltaX = pMouse->pt.x - g_LastMousePos.x;
                         int deltaY = pMouse->pt.y - g_LastMousePos.y;
                         
-                        log.WriteLine(LogLevel::Info, "Mouse Hook: WM_MOUSEMOVE (Raw X:" + std::to_string(pMouse->pt.x) + " Y:" + std::to_string(pMouse->pt.y) + ") (DeltaX: " + std::to_string(deltaX) + " DeltaY: " + std::to_string(deltaY) + ")");
-
                         // Calculate rotation deltas (adjust multipliers for sensitivity)
                         float yawDelta = static_cast<float>(deltaX) * 0.005f;
                         float pitchDelta = static_cast<float>(deltaY) * 0.005f;
@@ -214,15 +205,12 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
                                         cISC43DRender* renderer = pView3D->GetRenderer();
                                         if (renderer) {
                                             cSC4CameraControl* pCamControl = renderer->GetCameraControl();
-                                            log.WriteLine(LogLevel::Info, "Renderer Acquired. Patching Memory...");
                                             
                                             if (pCamControl) {
                                                 // Sync the struct's internal state so the engine builds correct matrices
                                                 pCamControl->yaw = g_CurrentYaw;
                                                 
-                                                log.WriteLine(LogLevel::Info, "Calling Engine UpdateCameraPosition(pCamControl, 2)...");
-                                                bool updateResult = UpdateCameraPosition(pCamControl, 2); 
-                                                log.WriteLine(LogLevel::Info, "Engine UpdateCameraPosition Returned: " + std::to_string(updateResult));
+                                                UpdateCameraPosition(pCamControl, 2); 
                                             } else {
                                                 log.WriteLine(LogLevel::Error, "Failed to get cSC4CameraControl from Renderer!");
                                             }
@@ -264,9 +252,7 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
                                     if (renderer) {
                                         cSC4CameraControl* pCamControl = renderer->GetCameraControl();
                                         if (pCamControl) {
-                                            log.WriteLine(LogLevel::Info, "Scroll Hook: Calling Engine UpdateCameraPosition(pCamControl, 2)...");
-                                            bool updateResult = UpdateCameraPosition(pCamControl, 2);
-                                            log.WriteLine(LogLevel::Info, "Scroll Hook: Engine Update Returned: " + std::to_string(updateResult));
+                                            UpdateCameraPosition(pCamControl, 2);
                                         }
                                     }
                                     pView3D->Release();
@@ -312,8 +298,6 @@ LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 if (!g_KeyState[vkCode]) {
                     g_KeyState[vkCode] = true;
                     log.WriteLine(LogLevel::Info, "Keyboard State: '" + keyName + "' Pressed");
-                } else {
-                    log.WriteLine(LogLevel::Info, "Keyboard State: '" + keyName + "' Held");
                 }
             } else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
                 g_KeyState[vkCode] = false;
