@@ -200,6 +200,8 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
                         float yawDelta = static_cast<float>(deltaX) * 0.005f;
                         float pitchDelta = static_cast<float>(deltaY) * 0.005f;
 
+                        UpdateCameraPitchYaw(pitchDelta, yawDelta);
+
                         // Trigger visual update properly using internal engine call
                         cISC4AppPtr pSC4App;
                         if (pSC4App) {
@@ -214,10 +216,10 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
                                             cSC4CameraControl* pCamControl = renderer->GetCameraControl();
                                             log.WriteLine(LogLevel::Info, "Renderer Acquired. Patching Memory...");
                                             
-                                            // Execute brutal memory patch
-                                            UpdateCameraPitchYaw(pitchDelta, yawDelta);
-                                            
                                             if (pCamControl) {
+                                                // Sync the struct's internal state so the engine builds correct matrices
+                                                pCamControl->yaw = g_CurrentYaw;
+                                                
                                                 log.WriteLine(LogLevel::Info, "Calling Engine UpdateCameraPosition(pCamControl, 2)...");
                                                 bool updateResult = UpdateCameraPosition(pCamControl, 2); 
                                                 log.WriteLine(LogLevel::Info, "Engine UpdateCameraPosition Returned: " + std::to_string(updateResult));
