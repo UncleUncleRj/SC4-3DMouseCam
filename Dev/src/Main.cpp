@@ -10,19 +10,13 @@
 #include "cIGZWin.h"
 #include "cISC4View3DWin.h"
 #include "cISC43DRender.h"
+#include "cS3DCamera.h"
 
 #include <algorithm>
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <string>
-
-// SC4 Native Structs for Memory Patching
-class cS3DCamera {
-public:
-    void* vtable;
-    intptr_t unknown[0x8D];
-};
 
 class cSC4CameraControl {
 public:
@@ -150,6 +144,30 @@ bool UpdateCameraPositionFromRenderer(Logger& log, bool syncYaw)
     });
 }
 
+void LogCameraPosition(Logger& log, const char* label, cISC43DRender* renderer)
+{
+    cS3DCamera* camera = renderer->GetCamera();
+
+    if (!camera) {
+        log.WriteLine(LogLevel::Warning, std::string("Camera Position [") + label + "]: GetCamera() returned null.");
+        return;
+    }
+
+    log.WriteLine(
+        LogLevel::Info,
+        std::string("Camera Position [") + label + "]: X:" + std::to_string(camera->vPos.fX) +
+        " Y:" + std::to_string(camera->vPos.fY) +
+        " Z:" + std::to_string(camera->vPos.fZ));
+}
+
+void LogCameraPositionFromRenderer(Logger& log, const char* label)
+{
+    WithRenderer([&](cISC43DRender* renderer) {
+        LogCameraPosition(log, label, renderer);
+        return true;
+    });
+}
+
 void OverwriteMemoryFloat(uintptr_t address, float newValue) {
     DWORD oldProtect;
     if (VirtualProtect(reinterpret_cast<void*>(address), sizeof(float), PAGE_EXECUTE_READWRITE, &oldProtect)) {
@@ -183,11 +201,13 @@ void UpdateCameraPitchYaw(float pitchDelta, float yawDelta) {
 }
 
 void TriggerCityRedraw() {
-    Logger::GetInstance().WriteLine(LogLevel::Info, "Executing ForceFullRedraw()...");
+    Logger& log = Logger::GetInstance();
+    log.WriteLine(LogLevel::Info, "Executing ForceFullRedraw()...");
 
-    WithRenderer([](cISC43DRender* renderer) {
+    WithRenderer([&](cISC43DRender* renderer) {
+        LogCameraPosition(log, "Idle redraw", renderer);
         renderer->ForceFullRedraw();
-        Logger::GetInstance().WriteLine(LogLevel::Info, "ForceFullRedraw() Success.");
+        log.WriteLine(LogLevel::Info, "ForceFullRedraw() Success.");
         return true;
     });
 }
@@ -388,6 +408,7 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 case WM_MOUSEWHEEL: {
                     short zDelta = HIWORD(pMouse->mouseData);
                     log.WriteLine(LogLevel::Info, "Mouse Hook: WM_MOUSEWHEEL (Delta: " + std::to_string(zDelta) + ")");
+                    LogCameraPositionFromRenderer(log, "Before wheel update");
                     
                     // The "Reverse Arch Down to Street Level" logic
                     // When scrolling, we tie the Pitch to the scroll delta to simulate an arching dive
@@ -397,6 +418,7 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     log.WriteLine(LogLevel::Info, "Zoom Scrolled: Starting/Resetting 1500ms Idle Timer");
                     StartIdleTimer(kZoomIdleRedrawDelayMs);
                     UpdateCameraPositionFromRenderer(log, false);
+                    LogCameraPositionFromRenderer(log, "After plugin wheel update");
                     
                     // We DO NOT return 1 here anymore. We WANT the game's internal DirectInput 
                     // to execute the standard 5-step zoom while we alter the pitch to create the arch.
