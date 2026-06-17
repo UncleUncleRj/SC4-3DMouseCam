@@ -2,42 +2,20 @@
 #include <windowsx.h>
 #include "cRZMessage2COMDirector.h"
 #include "Logger.h"
+#include "SC4CameraController.h"
 #include "cIGZMessageServer2.h"
 #include "cIGZMessage2Standard.h"
 #include "GZServPtrs.h"
 #include "SC4VersionDetection.h"
-#include "cISC4App.h"
-#include "cIGZWin.h"
 #include "cIGZCanvasW32.h"
 #include "cIGZGraphicSystem.h"
 #include "cIGZWinProcFilterW32.h"
-#include "cISC4View3DWin.h"
-#include "cISC43DRender.h"
-#include "cS3DCamera.h"
 
-#include <algorithm>
 #include <cstdlib>
-#include <cstdint>
-#include <cstring>
 #include <string>
-
-class cSC4CameraControl {
-public:
-    void* vtable;
-    intptr_t unknown[0x45];
-    float_t yaw;
-    float_t pitch;
-};
 
 static constexpr uint32_t kSC4MessagePostCityInit = 0x26D31EC1;
 static constexpr uint32_t kSC4MessagePreCityShutdown = 0x26D31EC2;
-static constexpr uint32_t kGZWin_WinSC4App = 0x6104489a;
-static constexpr uint32_t kGZWin_SC4View3DWin = 0x9a47b417;
-static constexpr uint32_t kCameraUpdateMode = 2;
-static constexpr float kDefaultPitch = 0.52359879f; // Default SC4 Zoom 1 pitch
-static constexpr float kDefaultYaw = -0.39269909f;  // Default SC4 yaw
-static constexpr float kMinPitch = 0.261f;
-static constexpr float kMaxPitch = 1.483f;
 static constexpr float kMouseRotationSensitivity = 0.005f;
 static constexpr float kWheelPitchStep = 0.08f;
 static constexpr UINT kPanIdleRedrawDelayMs = 1000;
@@ -45,38 +23,16 @@ static constexpr UINT kZoomIdleRedrawDelayMs = 1500;
 
 // Global State
 bool g_IsCityLoaded = false;
-HHOOK g_KeyboardHook = NULL;
-bool g_KeyState[256] = { false };
-
-// Memory addresses from sc4-3d-camera-dll for Pitch and Yaw.
-static constexpr uintptr_t kPitchAddress1 = 0xabcfd8;
-static constexpr uintptr_t kPitchAddress2 = 0xabaccc;
-static constexpr uintptr_t kYawAddress0 = 0x7ccb0a;
-static constexpr uintptr_t kYawAddress1 = 0xabcfc4;
-static constexpr uintptr_t kYawAddress2 = 0xabacb8;
 
 // Cinematic Camera State
 bool g_IsMiddleMouseDown = false;
 POINT g_LastMousePos = { 0, 0 };
 HWND g_CapturedMouseWindow = NULL;
-float g_CurrentPitch = kDefaultPitch;
-float g_CurrentYaw = kDefaultYaw;
+SC4CameraController g_CameraController;
 
 UINT_PTR g_IdleTimerID = 0;
 
-typedef bool(__thiscall* pfn_cSC4CameraControl_UpdateCameraPosition)(cSC4CameraControl* pThis, uint32_t updateMode);
-static pfn_cSC4CameraControl_UpdateCameraPosition UpdateCameraPosition = reinterpret_cast<pfn_cSC4CameraControl_UpdateCameraPosition>(0x7ccf80);
-
-LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam);
 VOID CALLBACK RedrawTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime);
-
-bool IsCurrentProcessForeground()
-{
-    DWORD foregroundProcessId = 0;
-    GetWindowThreadProcessId(GetForegroundWindow(), &foregroundProcessId);
-
-    return foregroundProcessId == GetCurrentProcessId();
-}
 
 void KillIdleTimer()
 {
@@ -92,125 +48,16 @@ void StartIdleTimer(UINT delayMs)
     g_IdleTimerID = SetTimer(NULL, 0, delayMs, RedrawTimerProc);
 }
 
-template <typename Function>
-bool WithRenderer(Function&& function)
-{
-    cISC4AppPtr pSC4App;
-    if (!pSC4App) {
-        return false;
-    }
-
-    cIGZWin* mainWindow = pSC4App->GetMainWindow();
-    if (!mainWindow) {
-        return false;
-    }
-
-    cIGZWin* pParentWin = mainWindow->GetChildWindowFromID(kGZWin_WinSC4App);
-    if (!pParentWin) {
-        return false;
-    }
-
-    cISC4View3DWin* pView3D = nullptr;
-    if (!pParentWin->GetChildAs(kGZWin_SC4View3DWin, kGZIID_cISC4View3DWin, reinterpret_cast<void**>(&pView3D))) {
-        return false;
-    }
-
-    bool result = false;
-    cISC43DRender* renderer = pView3D->GetRenderer();
-    if (renderer) {
-        result = function(renderer);
-    }
-
-    pView3D->Release();
-    return result;
-}
-
-bool UpdateCameraPositionFromRenderer(Logger& log, bool syncYaw)
-{
-    return WithRenderer([&](cISC43DRender* renderer) {
-        cSC4CameraControl* pCamControl = renderer->GetCameraControl();
-
-        if (!pCamControl) {
-            log.WriteLine(LogLevel::Error, "Failed to get cSC4CameraControl from Renderer!");
-            return false;
-        }
-
-        if (syncYaw) {
-            // Sync the struct's internal state so the engine builds correct matrices.
-            pCamControl->yaw = g_CurrentYaw;
-        }
-
-        UpdateCameraPosition(pCamControl, kCameraUpdateMode);
-        return true;
-    });
-}
-
-void LogCameraPosition(Logger& log, const char* label, cISC43DRender* renderer)
-{
-    cS3DCamera* camera = renderer->GetCamera();
-
-    if (!camera) {
-        log.WriteLine(LogLevel::Warning, std::string("Camera Position [") + label + "]: GetCamera() returned null.");
-        return;
-    }
-
-    log.WriteLine(
-        LogLevel::Info,
-        std::string("Camera Position [") + label + "]: X:" + std::to_string(camera->vPos.fX) +
-        " Y:" + std::to_string(camera->vPos.fY) +
-        " Z:" + std::to_string(camera->vPos.fZ));
-}
-
-void LogCameraPositionFromRenderer(Logger& log, const char* label)
-{
-    WithRenderer([&](cISC43DRender* renderer) {
-        LogCameraPosition(log, label, renderer);
-        return true;
-    });
-}
-
-void OverwriteMemoryFloat(uintptr_t address, float newValue) {
-    DWORD oldProtect;
-    if (VirtualProtect(reinterpret_cast<void*>(address), sizeof(float), PAGE_EXECUTE_READWRITE, &oldProtect)) {
-        *reinterpret_cast<float*>(address) = newValue;
-        VirtualProtect(reinterpret_cast<void*>(address), sizeof(float), oldProtect, &oldProtect);
-    } else {
-        char hexAddr[32];
-        sprintf_s(hexAddr, sizeof(hexAddr), "0x%X", address);
-        Logger::GetInstance().WriteLine(LogLevel::Error, std::string("VirtualProtect FAILED at ") + hexAddr);
-    }
-}
-
-void UpdateCameraPitchYaw(float pitchDelta, float yawDelta) {
-    g_CurrentPitch += pitchDelta;
-    g_CurrentYaw += yawDelta;
-
-    // Clamp pitch between ~15 degrees and ~85 degrees so we don't flip the camera upside down.
-    g_CurrentPitch = std::clamp(g_CurrentPitch, kMinPitch, kMaxPitch);
-
-    // Overwrite the game's internal camera floats
-    for (int i = 0; i < 5; i++) {
-        OverwriteMemoryFloat(kPitchAddress1 + i * 4, g_CurrentPitch);
-        OverwriteMemoryFloat(kPitchAddress2 + i * 4, g_CurrentPitch);
-    }
-    
-    OverwriteMemoryFloat(kYawAddress0, g_CurrentYaw);
-    for (int i = 0; i < 5; i++) {
-        OverwriteMemoryFloat(kYawAddress1 + i * 4, g_CurrentYaw);
-        OverwriteMemoryFloat(kYawAddress2 + i * 4, g_CurrentYaw);
-    }
-}
-
 void TriggerCityRedraw() {
     Logger& log = Logger::GetInstance();
     log.WriteLine(LogLevel::Info, "Executing ForceFullRedraw()...");
 
-    WithRenderer([&](cISC43DRender* renderer) {
-        LogCameraPosition(log, "Idle redraw", renderer);
-        renderer->ForceFullRedraw();
+    if (g_CameraController.ForceFullRedraw()) {
         log.WriteLine(LogLevel::Info, "ForceFullRedraw() Success.");
-        return true;
-    });
+    }
+    else {
+        log.WriteLine(LogLevel::Warning, "ForceFullRedraw() failed.");
+    }
 }
 
 POINT MakePointFromLParam(LPARAM lParam)
@@ -226,53 +73,17 @@ void LogMouseButtonEvent(const char* name, const POINT& point)
         std::string("Canvas WinProc Filter: ") + name + " at X:" + std::to_string(point.x) + " Y:" + std::to_string(point.y));
 }
 
-void NormalizeModifierKey(DWORD& vkCode)
-{
-    if (vkCode == VK_LSHIFT || vkCode == VK_RSHIFT) {
-        vkCode = VK_SHIFT;
-    }
-    else if (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL) {
-        vkCode = VK_CONTROL;
-    }
-    else if (vkCode == VK_LMENU || vkCode == VK_RMENU) {
-        vkCode = VK_MENU;
-    }
-}
-
-bool IsKeyDownMessage(WPARAM wParam)
-{
-    return wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN;
-}
-
-bool IsKeyUpMessage(WPARAM wParam)
-{
-    return wParam == WM_KEYUP || wParam == WM_SYSKEYUP;
-}
-
-void UninstallHooks()
-{
-    if (g_KeyboardHook) {
-        UnhookWindowsHookEx(g_KeyboardHook);
-        g_KeyboardHook = NULL;
-    }
-}
-
-void InstallHooks()
-{
-    if (!g_KeyboardHook) {
-        g_KeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardHookProc, GetModuleHandle(NULL), 0);
-    }
-}
-
 void ResetInputState()
 {
+    KillIdleTimer();
+
     if (g_CapturedMouseWindow != NULL && GetCapture() == g_CapturedMouseWindow) {
         ReleaseCapture();
     }
 
-    memset(g_KeyState, 0, sizeof(g_KeyState));
     g_IsMiddleMouseDown = false;
     g_CapturedMouseWindow = NULL;
+    g_CameraController.Reset();
 }
 
 std::string GetDefaultLogPath()
@@ -335,23 +146,6 @@ VOID CALLBACK RedrawTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTi
     }
 }
 
-std::string GetKeyName(DWORD vkCode) {
-    switch (vkCode) {
-        case VK_MENU: case VK_LMENU: case VK_RMENU: return "ALT";
-        case VK_SHIFT: case VK_LSHIFT: case VK_RSHIFT: return "SHIFT";
-        case VK_CONTROL: case VK_LCONTROL: case VK_RCONTROL: return "CTRL";
-        case 'W': return "W";
-        case 'A': return "A";
-        case 'S': return "S";
-        case 'D': return "D";
-        case VK_UP: return "Up Arrow";
-        case VK_DOWN: return "Down Arrow";
-        case VK_LEFT: return "Left Arrow";
-        case VK_RIGHT: return "Right Arrow";
-        default: return "Other Key (" + std::to_string(vkCode) + ")";
-    }
-}
-
 LRESULT HandleCanvasMouseMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bool& handled)
 {
     if (!g_IsCityLoaded) {
@@ -411,8 +205,7 @@ LRESULT HandleCanvasMouseMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
                 float yawDelta = static_cast<float>(deltaX) * kMouseRotationSensitivity;
                 float pitchDelta = static_cast<float>(deltaY) * kMouseRotationSensitivity;
 
-                UpdateCameraPitchYaw(pitchDelta, yawDelta);
-                UpdateCameraPositionFromRenderer(log, true);
+                g_CameraController.ApplyDelta(pitchDelta, yawDelta, true);
 
                 g_LastMousePos = mousePos;
                 handled = true;
@@ -423,15 +216,12 @@ LRESULT HandleCanvasMouseMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         case WM_MOUSEWHEEL: {
             short zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
             log.WriteLine(LogLevel::Info, "Canvas WinProc Filter: WM_MOUSEWHEEL (Delta: " + std::to_string(zDelta) + ")");
-            LogCameraPositionFromRenderer(log, "Before wheel update");
 
             float pitchArchDelta = (zDelta > 0) ? -kWheelPitchStep : kWheelPitchStep;
-            UpdateCameraPitchYaw(pitchArchDelta, 0.0f);
+            g_CameraController.ApplyDelta(pitchArchDelta, 0.0f, false);
 
             log.WriteLine(LogLevel::Info, "Zoom Scrolled: Starting/Resetting 1500ms Idle Timer");
             StartIdleTimer(kZoomIdleRedrawDelayMs);
-            UpdateCameraPositionFromRenderer(log, false);
-            LogCameraPositionFromRenderer(log, "After plugin wheel update");
 
             // Let SC4 continue processing the wheel so its standard zoom still runs.
             break;
@@ -439,38 +229,6 @@ LRESULT HandleCanvasMouseMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
     }
 
     return 0;
-}
-
-LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    if (nCode >= 0 && g_IsCityLoaded) {
-        if (IsCurrentProcessForeground()) {
-            KBDLLHOOKSTRUCT* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
-            Logger& log = Logger::GetInstance();
-            
-            DWORD vkCode = pKey->vkCode;
-            
-            if (IsKeyDownMessage(wParam)) {
-                log.WriteLine(LogLevel::Info, "Keyboard Hook: Key Down [VK_CODE: " + std::to_string(vkCode) + "]");
-            } else if (IsKeyUpMessage(wParam)) {
-                log.WriteLine(LogLevel::Info, "Keyboard Hook: Key Up [VK_CODE: " + std::to_string(vkCode) + "]");
-            }
-
-            NormalizeModifierKey(vkCode);
-
-            std::string keyName = GetKeyName(vkCode);
-            
-            if (IsKeyDownMessage(wParam)) {
-                if (!g_KeyState[vkCode]) {
-                    g_KeyState[vkCode] = true;
-                    log.WriteLine(LogLevel::Info, "Keyboard State: '" + keyName + "' Pressed");
-                }
-            } else if (IsKeyUpMessage(wParam)) {
-                g_KeyState[vkCode] = false;
-                log.WriteLine(LogLevel::Info, "Keyboard State: '" + keyName + "' Released");
-            }
-        }
-    }
-    return CallNextHookEx(g_KeyboardHook, nCode, wParam, lParam);
 }
 
 class cSC4MouseCamDirector : public cRZMessage2COMDirector, public cIGZWinProcFilterW32
@@ -521,14 +279,12 @@ public:
             g_IsCityLoaded = true;
             ResetInputState();
             RegisterCanvasWinProcFilter();
-            InstallHooks();
         }
         else if (msgType == kSC4MessagePreCityShutdown) {
             Logger::GetInstance().WriteLine(LogLevel::Info, "City Shutting Down. Deactivating input handlers...");
             g_IsCityLoaded = false;
             ResetInputState();
             UnregisterCanvasWinProcFilter();
-            UninstallHooks();
         }
 
         return true;

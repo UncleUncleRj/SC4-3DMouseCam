@@ -43,6 +43,26 @@ Open `SC4-3DMouseCam.slnx` in Visual Studio and build the `Dev` project for `Win
 
 The project is configured as a DLL plugin and includes the required GZCOM source files and headers under `Dev/src` and `Dev/vendor/gzcom`.
 
+## Acknowledgements
+
+This project builds on work from all around the SimCity 4 DLL modding community.
+
+- [gzcom-dll](https://github.com/nsgomez/gzcom-dll) provides the SimCity 4 GZCOM plugin SDK classes used by this DLL.
+- [3D Camera DLL for SimCity 4](https://github.com/memo33/sc4-3d-camera-dll) demonstrated the camera pitch/yaw memory tables and cheat-code driven camera overrides that made this project possible.
+- [sc4-render-services](https://github.com/caspervg/sc4-render-services), especially the camera-view-input sample, informed the reconstructed camera-control layout and cleaner camera update flow used here.
+- [sc4-dll-utilities](https://github.com/0xC0000054/sc4-dll-utilities) and [SC4Fix](https://github.com/nsgomez/sc4fix) informed the game-version detection fallback pattern.
+
+## License
+
+This project is licensed under the terms of the GNU General Public License version 3.0.
+See [LICENSE](LICENSE) for more information.
+
+## 3rd party code
+
+[gzcom-dll](https://github.com/nsgomez/gzcom-dll) - GNU Lesser General Public License version 2.1 or later.
+
+The GZCOM source files and headers used by this project are included under `Dev/src` and `Dev/vendor/gzcom`.
+
 ## Disclaimer
 
 This alpha may cause visual glitches, camera oddities, game instability, or other unexpected behavior. It is unlikely to harm your PC, but save-game issues have not been ruled out. Back up important cities or regions before testing.
