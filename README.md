@@ -1,20 +1,20 @@
 # SC4-3DMouseCam
 
-SC4-3DMouseCam is an experimental DLL plugin for SimCity 4 Deluxe Edition on Steam which will modify the camera to allow middle-mouse 3D Movement (RTS Style).
+SC4-3DMouseCam is a DLL plugin for SimCity 4 Deluxe Edition. It completely changes the SC4 Camera into a more modern City Builder style Mouse-Controlled camera.
 
-This project is currently an early alpha. It is intended for testing, feedback, and development acceleration rather than normal gameplay.
+This project is currently in BETA. Feel free to play with it, but __WARNING - backup your important cities and regions first!__
 
 ## Requirements
 
-- Windows version of SimCity 4 Deluxe or Rush Hour
-- Game version `1.1.641`, typically the Steam or GOG digital release
+- Windows version of SimCity 4 Deluxe Edition (Rush Hour)
+- Game version `641`, used by the Steam, GOG, and EA App digital releases
 
 Older disc/retail builds are not supported, and at this time support is not planned.
 
 ## Installation
 
 1. Download the `SC4-3DMouseCam.dll` file from the releases page.
-2. Copy it to your SimCity 4 Plugins folder, on Windows native it's usually:
+2. Copy it to your SimCity 4 Plugins folder, usually:
 
    ```text
    %USERPROFILE%\Documents\SimCity 4\Plugins\
@@ -24,10 +24,10 @@ Older disc/retail builds are not supported, and at this time support is not plan
 
 ## Current Controls
 
-- **Middle Mouse Button (M3) + drag**: Adjusts the camera angle.
-- **Mouse wheel**: Experimental smooth magnification/zoom while preserving the current camera angle.
-- **F8**: Dumps the current camera and renderer state to `SC4-3DMouseCam.log` for debugging.
-
+- **M3 + horizontal drag**: Rotates the camera.
+- **M3 + vertical drag**: Adjusts the camera pitch.
+- **Mouse wheel**: Smoothly zooms while preserving the current camera angle.
+- **F8**: Dumps the current camera and renderer state to a file `SC4-3DMouseCam.log` located in the plugins folder for debugging.
 
 ## Debug Logging
 
@@ -36,7 +36,7 @@ The plugin writes debug logs to the Plugins folder:
 - `SC4-3DMouseCam.log`
 - `SC4-3DMouseCam.last`
 
-These files are for debugging only and can be safely ignored or deleted.
+These files can be safely ignored or deleted.
 
 ## Building
 
@@ -58,13 +58,4 @@ This project builds on work from all around the SimCity 4 DLL modding community.
 This project is licensed under the terms of the GNU General Public License version 3.0.
 See [LICENSE](LICENSE) for more information.
 
-## 3rd party code
-
-[gzcom-dll](https://github.com/nsgomez/gzcom-dll) - GNU Lesser General Public License version 2.1 or later.
-
-The GZCOM source files and headers used by this project are included under `Dev/src` and `Dev/vendor/gzcom`.
-
-## Disclaimer
-
-This alpha may cause visual glitches, camera oddities, game instability, or other unexpected behavior. It is unlikely to harm your PC, but save-game issues have not been ruled out. Back up important cities or regions before testing.
-
+Bundled [gzcom-dll](https://github.com/nsgomez/gzcom-dll) code is licensed under the GNU Lesser General Public License version 2.1 or later.
