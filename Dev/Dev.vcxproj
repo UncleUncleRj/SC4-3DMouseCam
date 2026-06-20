@@ -16,6 +16,7 @@
     <ClCompile Include="src\PluginSettings.cpp" />
     <ClCompile Include="src\SC4CameraController.cpp" />
     <ClCompile Include="src\SC4VersionDetection.cpp" />
+    <ClCompile Include="src\TestWindow.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>
@@ -79,8 +80,9 @@
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
     <PostBuildEvent>
-      <Command>xcopy "$(TargetPath)" "$(PLUGINS_FOLDER)" /Y /I</Command>
-      <Message>Copying DLL to SC4 Plugins folder...</Message>
+      <Command>xcopy "$(TargetPath)" "$(PLUGINS_FOLDER)" /Y /I
+xcopy "$(ProjectDir)ui\SC4-3DMouseCam-TestUI.dat" "$(PLUGINS_FOLDER)" /Y /I</Command>
+      <Message>Copying DLL and native UI DAT to SC4 Plugins folder...</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -106,8 +108,9 @@
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
     <PostBuildEvent>
-      <Command>xcopy "$(TargetPath)" "$(PLUGINS_FOLDER)" /Y /I</Command>
-      <Message>Copying DLL to SC4 Plugins folder...</Message>
+      <Command>xcopy "$(TargetPath)" "$(PLUGINS_FOLDER)" /Y /I
+xcopy "$(ProjectDir)ui\SC4-3DMouseCam-TestUI.dat" "$(PLUGINS_FOLDER)" /Y /I</Command>
+      <Message>Copying DLL and native UI DAT to SC4 Plugins folder...</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -125,6 +128,11 @@
     <ClInclude Include="src\PluginVersion.h" />
     <ClInclude Include="src\SC4CameraController.h" />
     <ClInclude Include="src\SC4VersionDetection.h" />
+    <ClInclude Include="src\TestWindow.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ui\SC4-3DMouseCam-TestUI.dat" />
+    <None Include="ui\SC4-3DMouseCam-TestUI.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

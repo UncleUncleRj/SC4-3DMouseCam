@@ -50,3 +50,8 @@ std::filesystem::path PluginPaths::GetLogPath()
 {
 	return GetPluginDirectory() / L"SC4-3DMouseCam.log";
 }
+
+std::filesystem::path PluginPaths::GetTestSettingsPath()
+{
+	return GetPluginDirectory() / L"test.json";
+}

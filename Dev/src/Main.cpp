@@ -12,6 +12,7 @@
 #include "PluginVersion.h"
 #include "SC4CameraController.h"
 #include "SC4VersionDetection.h"
+#include "TestWindow.h"
 #include <Windows.h>
 #include <windowsx.h>
 
@@ -44,6 +45,7 @@ POINT g_LastMousePos = { 0, 0 };
 HWND g_CapturedMouseWindow = NULL;
 SC4CameraController g_CameraController;
 PluginSettings g_Settings;
+TestWindow g_TestWindow;
 
 UINT_PTR g_IdleTimerID = 0;
 UINT_PTR g_PeriodicRedrawTimerID = 0;
@@ -234,7 +236,10 @@ bool ShowSC4Notification(const char* caption, const char* message)
         kCreateSC4NotificationDialogAddress);
     cRZBaseString captionString(caption);
     cRZBaseString messageString(message);
-    return createDialog(captionString, messageString);
+    // The native function's Boolean result is not a success indicator. The
+    // reference SC4 DLL utilities intentionally ignore it.
+    createDialog(captionString, messageString);
+    return true;
 }
 
 VOID CALLBACK RedrawTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
@@ -281,7 +286,7 @@ VOID CALLBACK NativeCameraBaselineTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEve
 
 LRESULT HandleCanvasMouseMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bool& handled)
 {
-    if (!g_IsCityLoaded) {
+    if (!g_IsCityLoaded || g_TestWindow.IsVisible()) {
         return 0;
     }
 
@@ -496,6 +501,9 @@ public:
         if (msgType == kSC4MessagePostCityInit) {
             Logger::GetInstance().WriteLine(LogLevel::Info, "City Loaded! Activating input handlers...");
             ShowVersionNoticeIfNeeded();
+            if (!g_TestWindow.Create()) {
+                Logger::GetInstance().WriteLine(LogLevel::Warning, "The native UI test window could not be opened.");
+            }
             g_IsCityLoaded = true;
             ResetInputState();
             RegisterCanvasWinProcFilter();
@@ -512,6 +520,7 @@ public:
         }
         else if (msgType == kSC4MessagePreCityShutdown) {
             Logger::GetInstance().WriteLine(LogLevel::Info, "City Shutting Down. Deactivating input handlers...");
+            g_TestWindow.Destroy();
             g_CameraController.DumpCameraInfo("pre-city-shutdown");
             g_CameraController.AbandonSavePreviewNormalization();
             g_IsCityLoaded = false;
