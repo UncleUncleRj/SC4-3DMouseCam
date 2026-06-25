@@ -62,6 +62,16 @@ This produces all desired view types without a forced zoom/pitch curve:
 - Uses safe pitch limits to avoid singular, inverted, or invalid camera states.
 - Does not require Shift or a separate free-look mode.
 
+### WASD movement
+
+- Optional in Modern camera mode.
+- Moves the camera forward, back, left, and right while the key is held.
+- Uses a timer-driven held-key state, not operating-system key repeat, so movement stops immediately on key release.
+- Shift applies a movement-speed boost.
+- Uses the same playable-map boundary rules as the other Modern camera movement paths.
+- Does not engage during right-click scrolling.
+- Remains active during M3 camera maneuvering and zoom.
+
 ## Rotation Pivot and Anchor
 
 At the beginning of an M3 rotation gesture, capture SC4's current valid ground
@@ -120,6 +130,10 @@ healthy and broken states before assigning unverified meanings to fields.
 - M3 captures the current orthographic scale. During rotation, custom
   magnification counters SC4's square-to-diamond bounds-fit so the visible zoom
   does not bounce merely to keep every map corner inside the viewport.
+- Optional WASD movement consumes game W/A/S/D input only while Modern camera mode
+  and WASD Movement are enabled. Movement is smooth while held, stops on key
+  release, supports Shift boost, and respects the same map bounds as other camera
+  movement.
 - Native yaw uses a `[-70 degrees, +30 degrees]` hysteresis window. Building
   side meshes were observed disappearing when an exact 90-degree window mapped
   a healthy low-end orientation directly onto the opposite high-end boundary.

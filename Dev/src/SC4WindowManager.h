@@ -2,8 +2,10 @@
 
 #include "cIGZWinProc.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -13,6 +15,15 @@ class cGZMessage;
 class cIGZUnknown;
 class cIGZWin;
 class PluginSettings;
+
+struct SC4WindowManagerCallbacks
+{
+	std::function<void(bool modernCameraEnabled)> OnCameraModeChanged;
+	std::function<void()> OnRedrawAggressionChanged;
+	std::function<void()> OnResetCameraRequested;
+	std::function<void()> OnInputSettingsChanged;
+	std::function<void()> OnDebugLoggingChanged;
+};
 
 using SC4WindowHandle = uint32_t;
 inline constexpr SC4WindowHandle InvalidSC4WindowHandle = 0;
@@ -28,6 +39,13 @@ enum class SC4WindowButton : uint8_t
 enum class SC4WindowTemplate : uint8_t
 {
 	ControlLaboratory = 0,
+};
+
+enum class DeferredWindowOpen : uint8_t
+{
+	None = 0,
+	AdvancedSettings,
+	Changelog,
 };
 
 struct SC4BasicWindowOptions
@@ -55,6 +73,7 @@ public:
 	void Destroy();
 	void Close();
 	bool IsVisible() const;
+	bool ContainsPoint(int32_t parentX, int32_t parentY) const;
 
 private:
 	uint32_t refCount;
@@ -89,9 +108,14 @@ public:
 	bool Create();
 	void Destroy();
 	void Close();
+	void BringToFront();
+	void SendToBack();
 	bool IsVisible() const;
+	bool ContainsPoint(int32_t parentX, int32_t parentY) const;
 
 protected:
+	virtual void OnCreated();
+	virtual bool OnCommandMessage(cGZMessage& msg);
 	virtual bool OnButtonClick(uint32_t controlID);
 	virtual void OnClosed();
 	cIGZWin* GetRootWindow() const;
@@ -113,13 +137,32 @@ class SettingsWindow final : public BakedManagedWindow
 public:
 	SettingsWindow();
 	void SetWindowManager(class SC4WindowManager* manager);
+	void SetSettings(PluginSettings* settings);
+	void SetCallbacks(const SC4WindowManagerCallbacks* callbacks);
+	void RefreshFromSettings();
+	void OnDelayedSettingsSaveTimer();
 
 protected:
+	void OnCreated() override;
+	bool OnCommandMessage(cGZMessage& msg) override;
 	bool OnButtonClick(uint32_t controlID) override;
 	void OnClosed() override;
 
 private:
+	void SyncControlsFromSettings();
+	void ApplyBooleanPair(uint32_t onID, uint32_t offID, bool value);
+	void ApplyChoice(uint32_t selectedID, const uint32_t* ids, size_t count);
+	void ApplySettingsChange(const char* reason, bool saveImmediately = true);
+	void FlushPendingSettingsSave();
+	void ScheduleSettingsSave(const char* reason);
+	float ReadSliderValueFromCursor(uint32_t sliderID, float fallback) const;
+
 	SC4WindowManager* manager;
+	PluginSettings* settings;
+	const SC4WindowManagerCallbacks* callbacks;
+	uintptr_t delayedSaveTimerID;
+	bool delayedSavePending;
+	std::string delayedSaveReason;
 };
 
 class MenuButtonWindow final : public BakedManagedWindow
@@ -155,6 +198,25 @@ public:
 	ControlsWindow();
 };
 
+class AdvancedSettingsWindow final : public BakedManagedWindow
+{
+public:
+	AdvancedSettingsWindow();
+	void SetSettings(PluginSettings* settings);
+	void SetCallbacks(const SC4WindowManagerCallbacks* callbacks);
+	void RefreshFromSettings();
+
+protected:
+	void OnCreated() override;
+	bool OnButtonClick(uint32_t controlID) override;
+
+private:
+	void SyncControlsFromSettings();
+
+	PluginSettings* settings;
+	const SC4WindowManagerCallbacks* callbacks;
+};
+
 class ControlLaboratoryWindow final : public cIGZWinProc
 {
 public:
@@ -170,6 +232,7 @@ public:
 	bool Create();
 	void Destroy();
 	bool IsVisible() const;
+	bool ContainsPoint(int32_t parentX, int32_t parentY) const;
 	bool HandleMouseWheel(int32_t wheelDelta, int32_t parentX, int32_t parentY, intptr_t nativeWindowHandle);
 
 private:
@@ -222,9 +285,12 @@ private:
 class SC4WindowManager
 {
 public:
+	void SetCallbacks(SC4WindowManagerCallbacks callbacks);
 	void OnCityLoaded(PluginSettings& settings);
 	void OnCityShutdown();
 	void OnVersionNoticeTimer();
+	void OnSettingsReopenTimer();
+	void OnDeferredWindowOpenTimer();
 
 	bool ShowVersionNoticeIfNeeded(PluginSettings& settings);
 	bool ShowNotification(const char* caption, const char* message) const;
@@ -236,11 +302,16 @@ public:
 	bool ShowControlLaboratory();
 	bool ShowGreetingWindow();
 	bool ShowControlsWindow();
+	bool ShowAdvancedSettingsWindow();
 	bool ShowSettingsWindow();
 	bool ToggleSettingsWindow();
 	void OnSettingsWindowClosed();
+	void RefreshSettingsWindows();
+	void ScheduleSettingsWindowReopen();
+	void ScheduleDeferredWindowOpen(DeferredWindowOpen window);
 	void CloseAllWindows();
 	bool HasVisibleWindow() const;
+	bool IsPointOverVisibleWindow(int32_t parentX, int32_t parentY) const;
 	bool HandleMouseWheel(
 		int32_t wheelDelta, int32_t parentX, int32_t parentY, intptr_t nativeWindowHandle);
 
@@ -254,10 +325,16 @@ private:
 	ControlLaboratoryWindow controlLaboratory;
 	GreetingWindow greetingWindow;
 	ControlsWindow controlsWindow;
+	AdvancedSettingsWindow advancedSettingsWindow;
 	SettingsWindow settingsWindow;
 	MenuButtonWindow menuButtonWindow;
 	std::vector<BasicWindowEntry> basicWindows;
+	SC4WindowManagerCallbacks callbacks;
+	PluginSettings* pendingSettings = nullptr;
 	SC4WindowHandle nextWindowHandle = 100;
 	PluginSettings* pendingVersionNoticeSettings = nullptr;
 	uintptr_t versionNoticeTimerID = 0;
+	uintptr_t settingsReopenTimerID = 0;
+	uintptr_t deferredWindowOpenTimerID = 0;
+	DeferredWindowOpen pendingDeferredWindowOpen = DeferredWindowOpen::None;
 };

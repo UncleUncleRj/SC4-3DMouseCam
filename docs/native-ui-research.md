@@ -10,7 +10,7 @@ The test window is a native SimCity 4 UI window. It does not use ImGui and does 
 - `tools/build_sc4_ui_dat.py` packages that script into an uncompressed DBPF file.
 - `Dev/ui/SC4-3DMouseCam.dat` is the generated companion resource.
 - The Visual Studio post-build step copies the DAT beside the plugin DLL.
-- `Dev/src/SC4WindowManager.cpp` owns plugin windows and notification dialogs; its control-laboratory window registers controls, handles notifications, scrolls content, logs interactions, and writes `test.json`.
+- `Dev/src/SC4WindowManager.cpp` owns plugin windows, notification dialogs, the floating settings button, the production Settings window, the Advanced Settings child window, and the control laboratory.
 - `docs/changelog.md` is baked into the first-install greeting window by the DAT builder. The greeting version is read from `Dev/src/PluginVersion.h`, not from the changelog text.
 
 The DBPF resource identifiers are:
@@ -34,9 +34,10 @@ The manager currently owns:
 - the baked Controls help popup opened from the greeting window;
 - the baked floating camera-settings menu button;
 - the baked first-pass camera settings window;
+- the baked Advanced Settings window;
 - the native control-laboratory window.
 
-The Diagnostics window should be added as an additional managed window object. Each window keeps its own control IDs, layout state, and notification handling, while the manager coordinates:
+Each window keeps its own control IDs, layout state, and notification handling, while the manager coordinates:
 
 - showing windows and bringing existing instances to the front;
 - closing every plugin window during city shutdown;
@@ -56,7 +57,7 @@ manager.CreateManagedWindow(SC4WindowTemplate::ControlLaboratory);
 
 The parameterless form creates a blank 420-by-240 window with only the native X close button. Basic-window options accept a clamped width and height, title, wrapped body text, and one of four button arrangements: X only, OK, Close, or Accept. The latter three retain the X and add the named footer button.
 
-The factory returns an `SC4WindowHandle`; zero (`InvalidSC4WindowHandle`) indicates failure. The manager retains ownership and accepts the handle in `CloseWindow`. Named templates are used for windows with specialized controls or behavior. The control laboratory is the first registered template; Settings and Diagnostics should follow the same pattern.
+The factory returns an `SC4WindowHandle`; zero (`InvalidSC4WindowHandle`) indicates failure. The manager retains ownership and accepts the handle in `CloseWindow`. Named templates are used for windows with specialized controls or behavior. The control laboratory, Settings window, Advanced Settings window, greeting, controls popup, and floating menu button all use dedicated baked resources rather than dynamic layout.
 
 Basic windows are instantiated from the generic `SC4-3DMouseCam-BasicUI.txt` resource packed into the companion DAT. Runtime customization uses captions, `SetSize`, and relative `GZWinMoveTo` anchoring; it does not use either unsafe `SetArea` overload.
 
@@ -82,8 +83,13 @@ The packager currently emits these UI script resources in the same type/group:
 | `0x3D0C0707` | Controls help popup |
 | `0x3D0C0901` | Floating camera-settings menu button |
 | `0x3D0C0903` | Camera settings window |
+| `0x3D0C0905` | Advanced Settings window |
 
 The same DAT also carries the custom menu icon image resource `0x856DDBAC / 0x3D0C0700 / 0x3D0C0900`. The packager also substitutes the verified ordinance-style checkbox recipe and bakes `docs/changelog.md` into the greeting resource. The greeting heading is generated as `SC4-3DMouseCam v{PluginVersion::String} installed!`, so the version number remains centralized in `Dev/src/PluginVersion.h`. Keeping these transformations in the build step allows readable source files to remain easy to edit while preserving the exact native bitmap and text configuration that SC4 expects.
+
+The settings option buttons use the custom button-stage image resource `0x856DDBAC / 0x3D0C0700 / 0x3D0C0907`, generated from `Dev/ui/menu-button-stages.png`. The image strip order is Disabled, Normal, Selected, Hovered. The selected state uses the green `#25DC80` fill baked into the asset. Runtime calls to `cIGZWin::SetFillColor` and `SetFillColorRGB` caused a debug CRT ESP mismatch when opening the settings window, so selected-state coloring must be baked into button image resources instead of applied through those `cIGZWin` methods.
+
+Use `cIGZWinBtn::ToggleOn()` and `ToggleOff()` to select option buttons. Use `cIGZWin::SetFlag(cIGZWin::WinFlag_Enabled, false)` to switch a control to its disabled image and make it unclickable. Apply selection before the enabled flag when a disabled group still needs a logical selected state.
 
 ## Custom UI image and FSH research
 
@@ -383,9 +389,24 @@ The first-install/changelog popup is a baked native SC4 window generated from `d
 
 Creating the managed greeting immediately during city-load notification caused a crash. Deferring it by a short Win32 timer, currently 3 seconds, allowed the city view and UI hierarchy to finish initializing before the plugin created its own window.
 
+Opening a plugin child window directly inside a settings-window button callback can leave the new child behind the settings window after SC4 finishes its own command handling. The stable pattern is to schedule the child open on a short timer, let the button callback return, then send the settings window back and call `PullToFront()` on the child. This is used for the Advanced Settings and Show Changelog buttons.
+
+Advanced Settings has an additional verified z-order guard: when the user explicitly opens it from Settings, destroy and recreate the Advanced window before showing it, then send Settings back and pull Advanced to the front. Reusing the existing Advanced native child can inherit stale z-order after the user changes settings, especially after switching to Classic and reopening Advanced. Do not "simplify" this back to ordinary reuse unless a replacement z-order rule has been verified in game.
+
 The control laboratory is created only after the UI services and city view are available. While it is visible, camera input is suppressed so clicks and drags intended for controls cannot move the city camera.
 
-The root window and its controls should be reused by showing/hiding them. Avoid reconstructing the entire hierarchy during ordinary interaction.
+Most root windows and controls should be reused by showing/hiding them. Avoid reconstructing the entire hierarchy during ordinary interaction unless a specific native UI behavior requires it. Advanced Settings is the current exception because recreating it has proven more reliable for child-window z-order.
+
+## Production settings behavior
+
+The production settings workflow is documented in [settings-workflow.md](settings-workflow.md). The important native UI invariants are:
+
+- Camera mode buttons apply immediately while the settings window remains open.
+- Classic mode disables Modern-only controls but does not overwrite their saved Modern values.
+- Reset Camera Location stays enabled in Classic as a recovery action.
+- Advanced Settings remains available in Classic because diagnostics are not Modern-only.
+- Redraw Aggression only affects the Modern camera. While Classic camera mode is active, the Advanced redraw group visually selects Classic and disables the other redraw buttons without overwriting the saved Modern redraw value.
+- Every button option change should emit an explicit normal log entry. Slider movement can emit verbose per-step changes, with the delayed save logging the final values at normal level.
 
 ## Persistence files
 
@@ -412,15 +433,19 @@ For the settings and diagnostics UI:
 1. Author controls in a companion UI DAT and retrieve them by stable IDs.
 2. Use a fixed header, fixed native X, fixed footer, and one content viewport.
 3. Keep a full Close or Back button in the footer for discoverability.
-4. Use the verified small bitmap checkbox with a separate label.
-5. Hide partially visible scrolling controls instead of depending on clipping.
-6. Route every scroll input through one offset and layout function.
-7. Log raw notifications for any newly introduced control before assigning semantics.
-8. Do not call an SDK virtual method until its 32-bit ABI has been verified against the game.
+4. Use custom baked button-stage assets for option buttons; do not color buttons at runtime.
+5. Use `WinFlag_Enabled` for disabled controls so the native disabled state and disabled asset are used.
+6. Keep Modern-only settings visually disabled while Classic camera mode is active, but do not overwrite their saved Modern values.
+7. Keep Reset Camera Location available in both Modern and Classic as a recovery action.
+8. Keep diagnostics controls available in both Modern and Classic.
+9. Hide partially visible scrolling controls instead of depending on clipping.
+10. Route every scroll input through one offset and layout function.
+11. Log raw notifications for any newly introduced control before assigning semantics.
+12. Do not call an SDK virtual method until its 32-bit ABI has been verified against the game.
 
 ## Open questions
 
 - The concrete slider, spinner, text-edit, option-group, and scrollbar interfaces still need ABI-safe method declarations before values can be queried directly.
 - Direct ABI-safe access to a native scrollbar's numeric value has not yet been confirmed; wheel input currently activates its native arrow controls.
 - Keyboard focus, tab order, and accessibility behavior need a dedicated pass.
-- The final settings window should replace laboratory-only controls and remove `test.json` event recording.
+- The control laboratory still writes `test.json`; production Settings and Advanced Settings do not depend on it.

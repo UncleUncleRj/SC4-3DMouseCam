@@ -79,9 +79,9 @@ namespace
 	{
 		switch (value)
 		{
-		case RedrawAggression::Off: return "Off";
+		case RedrawAggression::Classic: return "Classic";
 		case RedrawAggression::High: return "High";
-		case RedrawAggression::Aggressive: return "Aggressive";
+		case RedrawAggression::Extreme: return "Extreme";
 		default: return "Normal";
 		}
 	}
@@ -147,9 +147,10 @@ bool PluginSettings::Load(const std::filesystem::path& settingsPath)
 
 	if (TryReadString(json, "redrawAggression", value))
 	{
-		if (value == "Off") redrawAggression = RedrawAggression::Off;
+		if (value == "Classic" || value == "Off" || value == "None") redrawAggression = RedrawAggression::Classic;
 		else if (value == "High") redrawAggression = RedrawAggression::High;
-		else if (value == "Aggressive") redrawAggression = RedrawAggression::Aggressive;
+		else if (value == "Extreme") redrawAggression = RedrawAggression::Extreme;
+		else if (value == "Aggressive") redrawAggression = RedrawAggression::High;
 		else redrawAggression = RedrawAggression::Normal;
 	}
 

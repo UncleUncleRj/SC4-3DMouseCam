@@ -11,10 +11,10 @@ enum class CameraMode
 
 enum class RedrawAggression
 {
-	Off,
+	Classic,
 	Normal,
 	High,
-	Aggressive
+	Extreme
 };
 
 enum class DebugLogging

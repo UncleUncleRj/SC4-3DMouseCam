@@ -15,6 +15,7 @@
 #include <Windows.h>
 #include <windowsx.h>
 
+#include <algorithm>
 #include <cmath>
 #include <exception>
 #include <filesystem>
@@ -25,9 +26,13 @@ static constexpr uint32_t kSC4MessagePreCityShutdown = 0x26D31EC2;
 static constexpr uint32_t kSC4MessagePreSave = 0x26C63343;
 static constexpr float kMouseRotationSensitivity = 0.005f;
 static constexpr UINT kPanIdleRedrawDelayMs = 1000;
+static constexpr UINT kKeyboardPanIdleRedrawDelayMs = 1000;
+static constexpr UINT kKeyboardPanTickMs = 33;
+static constexpr float kKeyboardPanStepsPerTick = 0.25f;
+static constexpr float kKeyboardPanBoostMultiplier = 3.0f;
 static constexpr UINT kZoomIdleRedrawDelayMs = 1500;
-static constexpr UINT kHighPeriodicRedrawDelayMs = 15000;
-static constexpr UINT kAggressivePeriodicRedrawDelayMs = 7000;
+static constexpr UINT kHighPeriodicRedrawDelayMs = 1000;
+static constexpr UINT kExtremePeriodicRedrawDelayMs = 100;
 static constexpr UINT kCameraDumpConfirmationDelayMs = 2500;
 static constexpr UINT kNativeCameraBaselineDelayMs = 1000;
 static constexpr UINT kDumpCameraInfoKey = VK_F8;
@@ -38,21 +43,46 @@ bool g_IsModernCamEnabled = true;
 
 // Cinematic Camera State
 bool g_IsMiddleMouseDown = false;
+bool g_IsRightMouseDown = false;
+bool g_WASDKeyWDown = false;
+bool g_WASDKeyADown = false;
+bool g_WASDKeySDown = false;
+bool g_WASDKeyDDown = false;
+bool g_WASDPanMovedSinceKeyDown = false;
 POINT g_LastMousePos = { 0, 0 };
 HWND g_CapturedMouseWindow = NULL;
+HHOOK g_KeyboardHook = NULL;
 SC4CameraController g_CameraController;
 PluginSettings g_Settings;
 SC4WindowManager g_WindowManager;
 
 UINT_PTR g_IdleTimerID = 0;
 UINT_PTR g_PeriodicRedrawTimerID = 0;
+UINT_PTR g_KeyboardPanTimerID = 0;
 UINT_PTR g_CameraDumpConfirmationTimerID = 0;
 UINT_PTR g_NativeCameraBaselineTimerID = 0;
 
 VOID CALLBACK RedrawTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime);
 VOID CALLBACK PeriodicRedrawTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime);
+VOID CALLBACK KeyboardPanTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime);
 VOID CALLBACK ClearCameraDumpConfirmationTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime);
 VOID CALLBACK NativeCameraBaselineTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime);
+LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam);
+void StopHeldWASDMovement(bool scheduleRedraw);
+
+const char* GetRedrawAggressionName()
+{
+    switch (g_Settings.redrawAggression) {
+    case RedrawAggression::Classic:
+        return "Classic";
+    case RedrawAggression::High:
+        return "High";
+    case RedrawAggression::Extreme:
+        return "Extreme";
+    default:
+        return "Normal";
+    }
+}
 
 void KillIdleTimer()
 {
@@ -77,6 +107,29 @@ void KillRedrawTimers()
     KillPeriodicRedrawTimer();
 }
 
+void KillKeyboardPanTimer()
+{
+    if (g_KeyboardPanTimerID != 0) {
+        KillTimer(NULL, g_KeyboardPanTimerID);
+        g_KeyboardPanTimerID = 0;
+    }
+}
+
+bool HasHeldWASDKey()
+{
+    return g_WASDKeyWDown || g_WASDKeyADown || g_WASDKeySDown || g_WASDKeyDDown;
+}
+
+void ClearHeldWASDKeys()
+{
+    g_WASDKeyWDown = false;
+    g_WASDKeyADown = false;
+    g_WASDKeySDown = false;
+    g_WASDKeyDDown = false;
+    g_WASDPanMovedSinceKeyDown = false;
+    KillKeyboardPanTimer();
+}
+
 void StartPeriodicRedrawTimer()
 {
     KillPeriodicRedrawTimer();
@@ -89,14 +142,19 @@ void StartPeriodicRedrawTimer()
     if (g_Settings.redrawAggression == RedrawAggression::High) {
         delayMs = kHighPeriodicRedrawDelayMs;
     }
-    else if (g_Settings.redrawAggression == RedrawAggression::Aggressive) {
-        delayMs = kAggressivePeriodicRedrawDelayMs;
+    else if (g_Settings.redrawAggression == RedrawAggression::Extreme) {
+        delayMs = kExtremePeriodicRedrawDelayMs;
     }
 
     if (delayMs == 0) {
         return;
     }
 
+    Logger::GetInstance().WriteLine(
+        LogLevel::Info,
+        "Starting periodic redraw timer: aggression="
+        + std::string(GetRedrawAggressionName())
+        + " delayMs=" + std::to_string(delayMs));
     g_PeriodicRedrawTimerID = SetTimer(NULL, 0, delayMs, PeriodicRedrawTimerProc);
     if (g_PeriodicRedrawTimerID == 0) {
         Logger::GetInstance().WriteLine(LogLevel::Warning, "Failed to start the periodic redraw timer.");
@@ -107,14 +165,22 @@ void StartIdleTimer(UINT delayMs)
 {
     KillRedrawTimers();
 
-    if (g_Settings.redrawAggression == RedrawAggression::Off) {
+    if (!g_IsCityLoaded || !g_IsModernCamEnabled || g_Settings.redrawAggression == RedrawAggression::Classic) {
         return;
     }
 
-    if (g_Settings.redrawAggression == RedrawAggression::Aggressive) {
-        delayMs = (delayMs * 2) / 3;
+    if (g_Settings.redrawAggression == RedrawAggression::High) {
+        delayMs = std::max<UINT>(100, delayMs / 4);
+    }
+    else if (g_Settings.redrawAggression == RedrawAggression::Extreme) {
+        delayMs = std::max<UINT>(25, delayMs / 20);
     }
 
+    Logger::GetInstance().WriteLine(
+        LogLevel::Info,
+        "Starting idle redraw timer: aggression="
+        + std::string(GetRedrawAggressionName())
+        + " delayMs=" + std::to_string(delayMs));
     g_IdleTimerID = SetTimer(NULL, 0, delayMs, RedrawTimerProc);
     if (g_IdleTimerID == 0) {
         Logger::GetInstance().WriteLine(LogLevel::Warning, "Failed to start the redraw timer.");
@@ -155,11 +221,11 @@ void StartNativeCameraBaselineTimer()
 void TriggerCityRedraw() {
     Logger& log = Logger::GetInstance();
 
-    if (!g_IsModernCamEnabled) {
+    if (!g_IsCityLoaded || !g_IsModernCamEnabled) {
         return;
     }
 
-    log.WriteLine(LogLevel::Verbose, "Executing forced redraw.");
+    log.WriteLine(LogLevel::Info, "Executing forced redraw.");
 
     if (!g_CameraController.ForceFullRedraw()) {
         log.WriteLine(LogLevel::Warning, "ForceFullRedraw() failed.");
@@ -182,6 +248,7 @@ void LogMouseButtonEvent(const char* name, const POINT& point)
 void ResetInputState()
 {
     KillRedrawTimers();
+    ClearHeldWASDKeys();
     KillCameraDumpConfirmationTimer();
     KillNativeCameraBaselineTimer();
     g_CameraController.ClearCameraDumpConfirmation();
@@ -191,8 +258,331 @@ void ResetInputState()
     }
 
     g_IsMiddleMouseDown = false;
+    g_IsRightMouseDown = false;
     g_CapturedMouseWindow = NULL;
     g_CameraController.Reset();
+}
+
+void ResetCameraToNativeView()
+{
+    Logger::GetInstance().WriteLine(LogLevel::Info, "Settings UI: reset camera requested.");
+    KillRedrawTimers();
+    ClearHeldWASDKeys();
+    KillCameraDumpConfirmationTimer();
+    KillNativeCameraBaselineTimer();
+
+    if (g_CapturedMouseWindow != NULL && GetCapture() == g_CapturedMouseWindow) {
+        ReleaseCapture();
+    }
+
+    g_IsMiddleMouseDown = false;
+    g_IsRightMouseDown = false;
+    g_CapturedMouseWindow = NULL;
+
+    if (g_CameraController.IsSavePreviewNormalizationActive()) {
+        g_CameraController.AbandonSavePreviewNormalization();
+    }
+    if (g_CameraController.BeginSavePreviewNormalization()) {
+        g_CameraController.AbandonSavePreviewNormalization();
+    }
+    g_CameraController.Reset();
+    StartPeriodicRedrawTimer();
+}
+
+void ApplyModernCameraEnabled(bool enabled)
+{
+    if (g_IsModernCamEnabled == enabled) {
+        return;
+    }
+
+    Logger::GetInstance().WriteLine(
+        LogLevel::Info,
+        std::string("Settings UI: Modern Camera Enabled changed to ") + (enabled ? "true" : "false"));
+    g_IsModernCamEnabled = enabled;
+    ClearHeldWASDKeys();
+
+    if (!enabled) {
+        ResetInputState();
+    }
+    else {
+        TriggerCityRedraw();
+        StartPeriodicRedrawTimer();
+    }
+}
+
+void ApplyRedrawAggressionChange()
+{
+    Logger::GetInstance().WriteLine(
+        LogLevel::Info,
+        "Settings UI: redraw aggression changed to "
+        + std::string(GetRedrawAggressionName())
+        + "; restarting redraw timers.");
+    KillRedrawTimers();
+    if (g_IsModernCamEnabled && g_Settings.redrawAggression != RedrawAggression::Classic) {
+        TriggerCityRedraw();
+    }
+    StartPeriodicRedrawTimer();
+}
+
+void ApplyInputSettingsChange()
+{
+    Logger::GetInstance().WriteLine(LogLevel::Info, "Settings UI: input settings changed; clearing held input state.");
+    StopHeldWASDMovement(true);
+}
+
+void ApplyDebugLoggingChange()
+{
+    LogVerbosity verbosity = LogVerbosity::Normal;
+    const char* name = "Normal";
+    switch (g_Settings.debugLogging) {
+    case DebugLogging::Off:
+        verbosity = LogVerbosity::Off;
+        name = "Off";
+        break;
+    case DebugLogging::Verbose:
+        verbosity = LogVerbosity::Verbose;
+        name = "Verbose";
+        break;
+    default:
+        break;
+    }
+
+    Logger::GetInstance().WriteLine(
+        LogLevel::Info,
+        std::string("Settings UI: debug logging setting changed to ") + name + ".");
+    Logger::GetInstance().SetVerbosity(verbosity);
+    Logger::GetInstance().WriteLine(LogLevel::Info, "Settings UI: debug logging is active.");
+}
+
+bool IsRightClickScrollingActive()
+{
+    return g_IsRightMouseDown || ((GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0);
+}
+
+bool IsWASDVirtualKey(WPARAM key, float& rightSteps, float& forwardSteps)
+{
+    rightSteps = 0.0f;
+    forwardSteps = 0.0f;
+
+    switch (key) {
+    case 'W':
+        forwardSteps = 1.0f;
+        return true;
+    case 'S':
+        forwardSteps = -1.0f;
+        return true;
+    case 'A':
+        rightSteps = -1.0f;
+        return true;
+    case 'D':
+        rightSteps = 1.0f;
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool IsWASDCharacter(WPARAM character)
+{
+    return character == 'W' || character == 'w'
+        || character == 'A' || character == 'a'
+        || character == 'S' || character == 's'
+        || character == 'D' || character == 'd';
+}
+
+bool* GetWASDKeyState(WPARAM key)
+{
+    switch (key) {
+    case 'W':
+        return &g_WASDKeyWDown;
+    case 'A':
+        return &g_WASDKeyADown;
+    case 'S':
+        return &g_WASDKeySDown;
+    case 'D':
+        return &g_WASDKeyDDown;
+    default:
+        return nullptr;
+    }
+}
+
+bool ShouldCaptureWASDKeys()
+{
+    return g_IsCityLoaded
+        && g_IsModernCamEnabled
+        && g_Settings.wasdMovement
+        && !IsRightClickScrollingActive();
+}
+
+void StopHeldWASDMovement(bool scheduleRedraw)
+{
+    const bool moved = g_WASDPanMovedSinceKeyDown;
+    ClearHeldWASDKeys();
+    if (scheduleRedraw && moved) {
+        StartIdleTimer(kKeyboardPanIdleRedrawDelayMs);
+    }
+}
+
+bool PanCameraFromWASD(float rightSteps, float forwardSteps, const char* source)
+{
+    Logger& log = Logger::GetInstance();
+    if (!g_CameraController.HasNativeCameraState()) {
+        g_CameraController.DumpCameraInfo(source);
+    }
+    if (g_CameraController.PanByKeyboard(rightSteps, forwardSteps)) {
+        log.WriteLine(
+            LogLevel::Info,
+            "WASD camera pan handled by "
+            + std::string(source ? source : "unknown source")
+            + ": rightSteps=" + std::to_string(rightSteps)
+            + " forwardSteps=" + std::to_string(forwardSteps));
+        return true;
+    }
+
+    log.WriteLine(
+        LogLevel::Warning,
+        "WASD camera pan failed in "
+        + std::string(source ? source : "unknown source")
+        + "; key input was still consumed.");
+    return false;
+}
+
+bool PanCameraFromHeldWASD()
+{
+    if (!ShouldCaptureWASDKeys()) {
+        StopHeldWASDMovement(true);
+        return false;
+    }
+
+    float rightSteps = (g_WASDKeyDDown ? 1.0f : 0.0f) - (g_WASDKeyADown ? 1.0f : 0.0f);
+    float forwardSteps = (g_WASDKeyWDown ? 1.0f : 0.0f) - (g_WASDKeySDown ? 1.0f : 0.0f);
+    if (rightSteps == 0.0f && forwardSteps == 0.0f) {
+        StopHeldWASDMovement(true);
+        return false;
+    }
+
+    const float length = std::sqrt((rightSteps * rightSteps) + (forwardSteps * forwardSteps));
+    if (length > 0.0f) {
+        const float speedMultiplier = ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0)
+            ? kKeyboardPanBoostMultiplier
+            : 1.0f;
+        const float stepsPerTick = kKeyboardPanStepsPerTick * speedMultiplier;
+        rightSteps = (rightSteps / length) * stepsPerTick;
+        forwardSteps = (forwardSteps / length) * stepsPerTick;
+    }
+
+    if (PanCameraFromWASD(rightSteps, forwardSteps, "held WASD movement tick")) {
+        g_WASDPanMovedSinceKeyDown = true;
+        return true;
+    }
+    return false;
+}
+
+void StartKeyboardPanTimer()
+{
+    if (g_KeyboardPanTimerID != 0) {
+        return;
+    }
+
+    g_KeyboardPanTimerID = SetTimer(NULL, 0, kKeyboardPanTickMs, KeyboardPanTimerProc);
+    if (g_KeyboardPanTimerID == 0) {
+        Logger::GetInstance().WriteLine(LogLevel::Warning, "Failed to start the WASD movement timer.");
+    }
+}
+
+void HandleWASDKeyState(WPARAM key, bool pressed)
+{
+    bool* keyState = GetWASDKeyState(key);
+    if (!keyState) {
+        return;
+    }
+
+    const bool wasAnyKeyHeld = HasHeldWASDKey();
+    *keyState = pressed;
+
+    if (pressed) {
+        if (!wasAnyKeyHeld) {
+            g_WASDPanMovedSinceKeyDown = false;
+            PanCameraFromHeldWASD();
+        }
+        StartKeyboardPanTimer();
+    }
+    else if (!HasHeldWASDKey()) {
+        StopHeldWASDMovement(true);
+    }
+}
+
+void InstallKeyboardHook()
+{
+    if (g_KeyboardHook != NULL) {
+        return;
+    }
+
+    HMODULE moduleHandle = NULL;
+    GetModuleHandleExW(
+        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCWSTR>(&KeyboardHookProc),
+        &moduleHandle);
+
+    g_KeyboardHook = SetWindowsHookExW(WH_KEYBOARD_LL, KeyboardHookProc, moduleHandle, 0);
+    if (g_KeyboardHook != NULL) {
+        Logger::GetInstance().WriteLine(LogLevel::Info, "Registered low-level WASD keyboard hook.");
+    }
+    else {
+        Logger::GetInstance().WriteLine(
+            LogLevel::Warning,
+            "Failed to register low-level WASD keyboard hook. GetLastError="
+            + std::to_string(GetLastError()));
+    }
+}
+
+void UninstallKeyboardHook()
+{
+    if (g_KeyboardHook == NULL) {
+        return;
+    }
+
+    if (!UnhookWindowsHookEx(g_KeyboardHook)) {
+        Logger::GetInstance().WriteLine(
+            LogLevel::Warning,
+            "Failed to unregister low-level WASD keyboard hook. GetLastError="
+            + std::to_string(GetLastError()));
+    }
+    else {
+        Logger::GetInstance().WriteLine(LogLevel::Info, "Unregistered low-level WASD keyboard hook.");
+    }
+    g_KeyboardHook = NULL;
+}
+
+LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    if (nCode == HC_ACTION) {
+        const KBDLLHOOKSTRUCT* keyboard = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
+        const bool isKeyDown = wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN;
+        const bool isKeyUp = wParam == WM_KEYUP || wParam == WM_SYSKEYUP;
+
+        float rightSteps = 0.0f;
+        float forwardSteps = 0.0f;
+        if (keyboard
+            && (isKeyDown || isKeyUp)
+            && IsWASDVirtualKey(keyboard->vkCode, rightSteps, forwardSteps)) {
+            DWORD foregroundProcessID = 0;
+            GetWindowThreadProcessId(GetForegroundWindow(), &foregroundProcessID);
+            if (foregroundProcessID == GetCurrentProcessId()) {
+                if (ShouldCaptureWASDKeys()) {
+                    HandleWASDKeyState(keyboard->vkCode, isKeyDown);
+                    return 1;
+                }
+                if (isKeyUp && HasHeldWASDKey()) {
+                    HandleWASDKeyState(keyboard->vkCode, false);
+                    return 1;
+                }
+                StopHeldWASDMovement(true);
+            }
+        }
+    }
+
+    return CallNextHookEx(g_KeyboardHook, nCode, wParam, lParam);
 }
 
 bool CheckGameVersion()
@@ -249,6 +639,17 @@ VOID CALLBACK PeriodicRedrawTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DW
     }
 }
 
+VOID CALLBACK KeyboardPanTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
+    if (idEvent == g_KeyboardPanTimerID && g_KeyboardPanTimerID != 0) {
+        if (!HasHeldWASDKey()) {
+            StopHeldWASDMovement(true);
+            return;
+        }
+
+        PanCameraFromHeldWASD();
+    }
+}
+
 VOID CALLBACK ClearCameraDumpConfirmationTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
     if (idEvent == g_CameraDumpConfirmationTimerID && g_CameraDumpConfirmationTimerID != 0) {
         KillCameraDumpConfirmationTimer();
@@ -271,31 +672,73 @@ LRESULT HandleCanvasMouseMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         return 0;
     }
 
-    if (g_WindowManager.HasVisibleWindow()) {
+    Logger& log = Logger::GetInstance();
+
+    const bool isMouseMessage = uMsg == WM_LBUTTONDOWN
+        || uMsg == WM_LBUTTONUP
+        || uMsg == WM_RBUTTONDOWN
+        || uMsg == WM_RBUTTONUP
+        || uMsg == WM_MBUTTONDOWN
+        || uMsg == WM_MBUTTONUP
+        || uMsg == WM_MOUSEMOVE
+        || uMsg == WM_MOUSEWHEEL;
+    if (g_WindowManager.HasVisibleWindow() && isMouseMessage && !g_IsMiddleMouseDown) {
+        // WM_MOUSEWHEEL supplies screen coordinates. Convert them to the
+        // canvas coordinates used by the native SC4 window hierarchy.
+        POINT cursor = MakePointFromLParam(lParam);
         if (uMsg == WM_MOUSEWHEEL) {
-            // WM_MOUSEWHEEL supplies screen coordinates. Convert them to the
-            // canvas coordinates used by the native SC4 window hierarchy.
-            POINT cursor = MakePointFromLParam(lParam);
-            if (ScreenToClient(hWnd, &cursor)
-                && g_WindowManager.HandleMouseWheel(
-                    GET_WHEEL_DELTA_WPARAM(wParam), cursor.x, cursor.y,
-                    reinterpret_cast<intptr_t>(hWnd))) {
+            if (!ScreenToClient(hWnd, &cursor)) {
+                return 0;
+            }
+            if (g_WindowManager.HandleMouseWheel(
+                GET_WHEEL_DELTA_WPARAM(wParam), cursor.x, cursor.y,
+                reinterpret_cast<intptr_t>(hWnd))) {
                 handled = true;
                 return 0;
             }
         }
-        return 0;
-    }
 
-    Logger& log = Logger::GetInstance();
+        if (g_WindowManager.IsPointOverVisibleWindow(cursor.x, cursor.y)) {
+            return 0;
+        }
+    }
 
     const bool resumesCameraInteraction = uMsg == WM_LBUTTONDOWN
         || uMsg == WM_RBUTTONDOWN
         || uMsg == WM_MBUTTONDOWN
         || uMsg == WM_MOUSEWHEEL
-        || uMsg == WM_KEYDOWN;
+        || uMsg == WM_KEYDOWN
+        || uMsg == WM_SYSKEYDOWN;
     if (resumesCameraInteraction && g_CameraController.IsSavePreviewNormalizationActive()) {
         g_CameraController.EndSavePreviewNormalization();
+    }
+
+    const bool isWASDKeyMessage = uMsg == WM_KEYDOWN
+        || uMsg == WM_SYSKEYDOWN
+        || uMsg == WM_KEYUP
+        || uMsg == WM_SYSKEYUP;
+    const bool isWASDCharMessage = uMsg == WM_CHAR || uMsg == WM_SYSCHAR;
+
+    float rightSteps = 0.0f;
+    float forwardSteps = 0.0f;
+    if (isWASDKeyMessage && IsWASDVirtualKey(wParam, rightSteps, forwardSteps)) {
+        if (ShouldCaptureWASDKeys()) {
+            HandleWASDKeyState(wParam, uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN);
+            handled = true;
+            return 0;
+        }
+        if ((uMsg == WM_KEYUP || uMsg == WM_SYSKEYUP) && HasHeldWASDKey()) {
+            HandleWASDKeyState(wParam, false);
+            handled = true;
+            return 0;
+        }
+        StopHeldWASDMovement(true);
+    }
+    else if (isWASDCharMessage && IsWASDCharacter(wParam)) {
+        if (ShouldCaptureWASDKeys()) {
+            handled = true;
+            return 0;
+        }
     }
 
     switch (uMsg) {
@@ -324,10 +767,13 @@ LRESULT HandleCanvasMouseMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
     }
     case WM_RBUTTONDOWN: {
         LogMouseButtonEvent("WM_RBUTTONDOWN (Right Mouse Down)", MakePointFromLParam(lParam));
+        g_IsRightMouseDown = true;
+        StopHeldWASDMovement(true);
         break;
     }
     case WM_RBUTTONUP: {
         LogMouseButtonEvent("WM_RBUTTONUP (Right Mouse Up)", MakePointFromLParam(lParam));
+        g_IsRightMouseDown = false;
         break;
     }
     case WM_MBUTTONDOWN: {
@@ -463,18 +909,15 @@ public:
         }
 
         g_IsModernCamEnabled = g_Settings.cameraMode == CameraMode::Modern;
+        g_WindowManager.SetCallbacks(SC4WindowManagerCallbacks{
+            ApplyModernCameraEnabled,
+            ApplyRedrawAggressionChange,
+            ResetCameraToNativeView,
+            ApplyInputSettingsChange,
+            ApplyDebugLoggingChange,
+        });
 
-        switch (g_Settings.debugLogging) {
-        case DebugLogging::Off:
-            Logger::GetInstance().SetVerbosity(LogVerbosity::Off);
-            break;
-        case DebugLogging::Verbose:
-            Logger::GetInstance().SetVerbosity(LogVerbosity::Verbose);
-            break;
-        default:
-            Logger::GetInstance().SetVerbosity(LogVerbosity::Normal);
-            break;
-        }
+        ApplyDebugLoggingChange();
 
         Logger::GetInstance().WriteLine(
             LogLevel::Info,
@@ -502,6 +945,7 @@ public:
             g_IsCityLoaded = true;
             ResetInputState();
             RegisterCanvasWinProcFilter();
+            InstallKeyboardHook();
             StartNativeCameraBaselineTimer();
             StartPeriodicRedrawTimer();
         }
@@ -520,6 +964,7 @@ public:
             g_CameraController.AbandonSavePreviewNormalization();
             g_IsCityLoaded = false;
             ResetInputState();
+            UninstallKeyboardHook();
             UnregisterCanvasWinProcFilter();
         }
 

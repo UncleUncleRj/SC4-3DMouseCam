@@ -30,6 +30,7 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <utility>
 
 namespace
 {
@@ -47,6 +48,8 @@ namespace
 	constexpr uint32_t kMenuButtonCLSID = 0x3D0C0902;
 	constexpr uint32_t kSettingsWindowResourceInstance = 0x3D0C0903;
 	constexpr uint32_t kSettingsWindowCLSID = 0x3D0C0904;
+	constexpr uint32_t kAdvancedWindowResourceInstance = 0x3D0C0905;
+	constexpr uint32_t kAdvancedWindowCLSID = 0x3D0C0906;
 	constexpr uint32_t kBasicCloseXButtonID = 0x3D0C0810;
 	constexpr uint32_t kBasicTitleID = 0x3D0C0820;
 	constexpr uint32_t kBasicTextID = 0x3D0C0821;
@@ -58,7 +61,28 @@ namespace
 	constexpr uint32_t kControlsOKButtonID = 0x3D0C0853;
 	constexpr uint32_t kMenuButtonID = 0x3D0C0910;
 	constexpr uint32_t kSettingsCloseXButtonID = 0x3D0C0920;
+	constexpr uint32_t kSettingsModernButtonID = 0x3D0C0930;
+	constexpr uint32_t kSettingsClassicButtonID = 0x3D0C0931;
+	constexpr uint32_t kSettingsWASDOnButtonID = 0x3D0C0932;
+	constexpr uint32_t kSettingsWASDOffButtonID = 0x3D0C0933;
+	constexpr uint32_t kSettingsRotationSliderID = 0x3D0C0934;
+	constexpr uint32_t kSettingsZoomSliderID = 0x3D0C0935;
+	constexpr uint32_t kSettingsInvertOnButtonID = 0x3D0C0936;
+	constexpr uint32_t kSettingsInvertOffButtonID = 0x3D0C0937;
+	constexpr uint32_t kSettingsResetCameraButtonID = 0x3D0C0938;
+	constexpr uint32_t kSettingsRedrawOffButtonID = 0x3D0C0940;
+	constexpr uint32_t kSettingsRedrawNormalButtonID = 0x3D0C0941;
+	constexpr uint32_t kSettingsRedrawHighButtonID = 0x3D0C0942;
+	constexpr uint32_t kSettingsRedrawAggressiveButtonID = 0x3D0C0943;
+	constexpr uint32_t kSettingsRestoreDefaultsButtonID = 0x3D0C0950;
+	constexpr uint32_t kSettingsAdvancedButtonID = 0x3D0C0951;
 	constexpr uint32_t kSettingsReadChangelogButtonID = 0x3D0C0952;
+	constexpr uint32_t kSettingsCloseButtonID = 0x3D0C0953;
+	constexpr uint32_t kAdvancedCloseXButtonID = 0x3D0C0960;
+	constexpr uint32_t kAdvancedCloseButtonID = 0x3D0C0963;
+	constexpr uint32_t kAdvancedDebugLoggingOffButtonID = 0x3D0C0968;
+	constexpr uint32_t kAdvancedDebugLoggingNormalButtonID = 0x3D0C0969;
+	constexpr uint32_t kAdvancedDebugLoggingVerboseButtonID = 0x3D0C096A;
 	constexpr SC4WindowHandle kControlLaboratoryHandle = 1;
 
 	constexpr uint32_t kCloseButtonID = 0x3D0C0710;
@@ -69,17 +93,48 @@ namespace
 
 	constexpr uint32_t kMessageTypeCommand = 3;
 	constexpr uint32_t kCommandButtonClicked = 0x287259F6;
+	constexpr uint32_t kCommandValueChanged = 0x887113A3;
 	using CreateSC4NotificationDialog = bool(__cdecl*)(cIGZString const& caption, cIGZString const& message);
 	constexpr uintptr_t kCreateSC4NotificationDialogAddress = 0x78DD80;
 	constexpr UINT kVersionNoticeDelayMs = 3000;
+	constexpr UINT kSettingsSliderSaveDelayMs = 200;
+	constexpr UINT kSettingsReopenDelayMs = 1;
+	constexpr UINT kDeferredWindowOpenDelayMs = 1;
 
 	SC4WindowManager* g_DelayedVersionNoticeManager = nullptr;
+	SettingsWindow* g_DelayedSettingsSaveWindow = nullptr;
+	SC4WindowManager* g_DelayedSettingsReopenManager = nullptr;
+	SC4WindowManager* g_DelayedWindowOpenManager = nullptr;
 
 	VOID CALLBACK DelayedVersionNoticeTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime)
 	{
 		if (g_DelayedVersionNoticeManager)
 		{
 			g_DelayedVersionNoticeManager->OnVersionNoticeTimer();
+		}
+	}
+
+	VOID CALLBACK DelayedSettingsSaveTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime)
+	{
+		if (g_DelayedSettingsSaveWindow)
+		{
+			g_DelayedSettingsSaveWindow->OnDelayedSettingsSaveTimer();
+		}
+	}
+
+	VOID CALLBACK DelayedSettingsReopenTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime)
+	{
+		if (g_DelayedSettingsReopenManager)
+		{
+			g_DelayedSettingsReopenManager->OnSettingsReopenTimer();
+		}
+	}
+
+	VOID CALLBACK DeferredWindowOpenTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime)
+	{
+		if (g_DelayedWindowOpenManager)
+		{
+			g_DelayedWindowOpenManager->OnDeferredWindowOpenTimer();
 		}
 	}
 
@@ -158,6 +213,139 @@ namespace
 			return button->SetCaption(text);
 		}
 		return window->SetCaption(text);
+	}
+
+	const char* ToCameraModeString(CameraMode value)
+	{
+		return value == CameraMode::Classic ? "Classic" : "Modern";
+	}
+
+	const char* ToRedrawAggressionString(RedrawAggression value)
+	{
+		switch (value)
+		{
+		case RedrawAggression::Classic:
+			return "Classic";
+		case RedrawAggression::High:
+			return "High";
+		case RedrawAggression::Extreme:
+			return "Extreme";
+		default:
+			return "Normal";
+		}
+	}
+
+	const char* ToDebugLoggingString(DebugLogging value)
+	{
+		switch (value)
+		{
+		case DebugLogging::Off:
+			return "Off";
+		case DebugLogging::Verbose:
+			return "Verbose";
+		default:
+			return "Normal";
+		}
+	}
+
+	const char* ToOnOffString(bool value)
+	{
+		return value ? "On" : "Off";
+	}
+
+	std::string FormatSettingFloat(float value)
+	{
+		std::ostringstream stream;
+		stream << std::fixed << std::setprecision(2) << value;
+		return stream.str();
+	}
+
+	void LogOptionChanged(
+		const char* source,
+		const char* option,
+		const std::string& before,
+		const std::string& after,
+		LogLevel level = LogLevel::Info)
+	{
+		if (before == after)
+		{
+			return;
+		}
+
+		Logger::GetInstance().WriteLine(
+			level,
+			std::string(source ? source : "Settings UI")
+			+ ": "
+			+ (option ? option : "option")
+			+ " changed from "
+			+ before
+			+ " to "
+			+ after
+			+ ".");
+	}
+
+	void ApplyButtonChoice(cIGZWin* root, uint32_t selectedID, const uint32_t* ids, size_t count)
+	{
+		if (!root)
+		{
+			return;
+		}
+
+		for (size_t i = 0; i < count; ++i)
+		{
+			cIGZWin* child = root->GetChildWindowFromIDRecursive(ids[i]);
+			cRZAutoRefCount<cIGZWinBtn> button;
+			if (child && child->QueryInterface(GZIID_cIGZWinBtn, button.AsPPVoid()))
+			{
+				if (ids[i] == selectedID)
+				{
+					button->ToggleOn();
+				}
+				else
+				{
+					button->ToggleOff();
+				}
+				child->InvalidateSelfAndParents();
+			}
+		}
+	}
+
+	void SetControlEnabled(cIGZWin* root, uint32_t id, bool enabled)
+	{
+		cIGZWin* child = root ? root->GetChildWindowFromIDRecursive(id) : nullptr;
+		if (!child)
+		{
+			return;
+		}
+
+		child->SetFlag(cIGZWin::WinFlag_Enabled, enabled);
+		child->InvalidateSelfAndParents();
+	}
+
+	void SetControlsEnabled(cIGZWin* root, const uint32_t* ids, size_t count, bool enabled)
+	{
+		for (size_t i = 0; i < count; ++i)
+		{
+			SetControlEnabled(root, ids[i], enabled);
+		}
+	}
+
+	bool IsRedrawAggressionControl(uint32_t controlID)
+	{
+		return controlID == kSettingsRedrawOffButtonID
+			|| controlID == kSettingsRedrawNormalButtonID
+			|| controlID == kSettingsRedrawHighButtonID
+			|| controlID == kSettingsRedrawAggressiveButtonID;
+	}
+
+	bool WindowContainsParentPoint(cIGZWin* window, int32_t parentX, int32_t parentY)
+	{
+		return window
+			&& window->IsVisible()
+			&& parentX >= window->GetL()
+			&& parentX < window->GetR()
+			&& parentY >= window->GetT()
+			&& parentY < window->GetB();
 	}
 }
 
@@ -346,6 +534,11 @@ bool BasicManagedWindow::IsVisible() const
 	return rootWindow && rootWindow->IsVisible();
 }
 
+bool BasicManagedWindow::ContainsPoint(int32_t parentX, int32_t parentY) const
+{
+	return WindowContainsParentPoint(rootWindow, parentX, parentY);
+}
+
 bool BasicManagedWindow::DoWinProcMessage(cIGZWin*, cGZMessage& msg)
 {
 	if (msg.dwMessageType == kMessageTypeCommand
@@ -478,6 +671,7 @@ bool BakedManagedWindow::Create()
 	SetWinProc(rootWindow, this);
 	rootWindow->PullToFront();
 	rootWindow->ShowWindow();
+	OnCreated();
 	Logger::GetInstance().WriteLine(LogLevel::Info, std::string(logName) + ": opened.");
 	return true;
 }
@@ -510,23 +704,57 @@ void BakedManagedWindow::Close()
 	}
 }
 
+void BakedManagedWindow::BringToFront()
+{
+	if (rootWindow)
+	{
+		rootWindow->PullToFront();
+		rootWindow->InvalidateSelfAndParents();
+	}
+}
+
+void BakedManagedWindow::SendToBack()
+{
+	if (rootWindow)
+	{
+		rootWindow->SendToBack();
+	}
+}
+
 bool BakedManagedWindow::IsVisible() const
 {
 	return rootWindow && rootWindow->IsVisible();
 }
 
+bool BakedManagedWindow::ContainsPoint(int32_t parentX, int32_t parentY) const
+{
+	return WindowContainsParentPoint(rootWindow, parentX, parentY);
+}
+
 bool BakedManagedWindow::DoWinProcMessage(cIGZWin*, cGZMessage& msg)
 {
-	if (msg.dwMessageType == kMessageTypeCommand
-		&& msg.dwData1 == kCommandButtonClicked)
+	if (msg.dwMessageType == kMessageTypeCommand)
 	{
-		return OnButtonClick(msg.dwData2);
+		return OnCommandMessage(msg);
 	}
 	return false;
 }
 
 bool BakedManagedWindow::DoWinMsg(cIGZWin*, uint32_t, uint32_t, uint32_t, uint32_t)
 {
+	return false;
+}
+
+void BakedManagedWindow::OnCreated()
+{
+}
+
+bool BakedManagedWindow::OnCommandMessage(cGZMessage& msg)
+{
+	if (msg.dwData1 == kCommandButtonClicked)
+	{
+		return OnButtonClick(msg.dwData2);
+	}
 	return false;
 }
 
@@ -555,8 +783,13 @@ SettingsWindow::SettingsWindow()
 		kSettingsWindowResourceInstance,
 		kSettingsWindowCLSID,
 		kSettingsCloseXButtonID,
-		0),
-	manager(nullptr)
+		kSettingsCloseButtonID),
+	manager(nullptr),
+	settings(nullptr),
+	callbacks(nullptr),
+	delayedSaveTimerID(0),
+	delayedSavePending(false),
+	delayedSaveReason()
 {
 }
 
@@ -565,13 +798,542 @@ void SettingsWindow::SetWindowManager(SC4WindowManager* windowManager)
 	manager = windowManager;
 }
 
+void SettingsWindow::SetSettings(PluginSettings* pluginSettings)
+{
+	settings = pluginSettings;
+}
+
+void SettingsWindow::SetCallbacks(const SC4WindowManagerCallbacks* managerCallbacks)
+{
+	callbacks = managerCallbacks;
+}
+
+void SettingsWindow::RefreshFromSettings()
+{
+	SyncControlsFromSettings();
+}
+
+void SettingsWindow::OnCreated()
+{
+	SyncControlsFromSettings();
+}
+
+void SettingsWindow::ApplyChoice(uint32_t selectedID, const uint32_t* ids, size_t count)
+{
+	ApplyButtonChoice(GetRootWindow(), selectedID, ids, count);
+}
+
+void SettingsWindow::ApplyBooleanPair(uint32_t onID, uint32_t offID, bool value)
+{
+	const uint32_t ids[2] = { onID, offID };
+	ApplyChoice(value ? onID : offID, ids, 2);
+}
+
+void SettingsWindow::SyncControlsFromSettings()
+{
+	if (!settings)
+	{
+		return;
+	}
+
+	const uint32_t cameraModeIDs[2] = { kSettingsModernButtonID, kSettingsClassicButtonID };
+	ApplyChoice(
+		settings->cameraMode == CameraMode::Modern ? kSettingsModernButtonID : kSettingsClassicButtonID,
+		cameraModeIDs,
+		2);
+	ApplyBooleanPair(kSettingsWASDOnButtonID, kSettingsWASDOffButtonID, settings->wasdMovement);
+	ApplyBooleanPair(kSettingsInvertOnButtonID, kSettingsInvertOffButtonID, settings->invertVertical);
+
+	const bool modernCameraActive = settings->cameraMode == CameraMode::Modern;
+	const uint32_t modernOnlyControlIDs[] = {
+		kSettingsWASDOnButtonID,
+		kSettingsWASDOffButtonID,
+		kSettingsRotationSliderID,
+		kSettingsZoomSliderID,
+		kSettingsInvertOnButtonID,
+		kSettingsInvertOffButtonID,
+	};
+	SetControlsEnabled(
+		GetRootWindow(),
+		modernOnlyControlIDs,
+		sizeof(modernOnlyControlIDs) / sizeof(modernOnlyControlIDs[0]),
+		modernCameraActive);
+}
+
+void SettingsWindow::ApplySettingsChange(const char* reason, bool saveImmediately)
+{
+	if (!settings)
+	{
+		return;
+	}
+	Logger::GetInstance().WriteLine(
+		LogLevel::Info,
+		"Settings UI state: mode="
+		+ std::string(settings->cameraMode == CameraMode::Modern ? "Modern" : "Classic")
+		+ " wasd=" + (settings->wasdMovement ? "true" : "false")
+		+ " rotationSensitivity=" + std::to_string(settings->rotationSensitivity)
+		+ " zoomSensitivity=" + std::to_string(settings->zoomSensitivity)
+		+ " invertVertical=" + (settings->invertVertical ? "true" : "false")
+		+ " redrawAggression="
+		+ (settings->redrawAggression == RedrawAggression::Classic ? "Classic"
+			: settings->redrawAggression == RedrawAggression::High ? "High"
+			: settings->redrawAggression == RedrawAggression::Extreme ? "Extreme"
+			: "Normal")
+		+ " debugLogging="
+		+ ToDebugLoggingString(settings->debugLogging));
+
+	if (!saveImmediately)
+	{
+		ScheduleSettingsSave(reason);
+		SyncControlsFromSettings();
+		return;
+	}
+
+	FlushPendingSettingsSave();
+	if (!settings->Save())
+	{
+		Logger::GetInstance().WriteLine(
+			LogLevel::Warning,
+			std::string("Settings UI: failed to save settings after ") + (reason ? reason : "change") + ".");
+	}
+	else
+	{
+		Logger::GetInstance().WriteLine(
+			LogLevel::Info,
+			std::string("Settings UI: saved settings after ") + (reason ? reason : "change") + ".");
+	}
+	SyncControlsFromSettings();
+}
+
+void SettingsWindow::ScheduleSettingsSave(const char* reason)
+{
+	delayedSavePending = true;
+	delayedSaveReason = reason ? reason : "change";
+	if (delayedSaveTimerID != 0)
+	{
+		KillTimer(NULL, static_cast<UINT_PTR>(delayedSaveTimerID));
+		delayedSaveTimerID = 0;
+	}
+
+	g_DelayedSettingsSaveWindow = this;
+	delayedSaveTimerID = static_cast<uintptr_t>(
+		SetTimer(NULL, 0, kSettingsSliderSaveDelayMs, DelayedSettingsSaveTimerProc));
+	if (delayedSaveTimerID == 0)
+	{
+		Logger::GetInstance().WriteLine(
+			LogLevel::Warning,
+			"Settings UI: failed to start delayed settings save timer; saving immediately.");
+		FlushPendingSettingsSave();
+	}
+}
+
+void SettingsWindow::FlushPendingSettingsSave()
+{
+	if (delayedSaveTimerID != 0)
+	{
+		KillTimer(NULL, static_cast<UINT_PTR>(delayedSaveTimerID));
+		delayedSaveTimerID = 0;
+	}
+	if (g_DelayedSettingsSaveWindow == this)
+	{
+		g_DelayedSettingsSaveWindow = nullptr;
+	}
+
+	if (!delayedSavePending || !settings)
+	{
+		return;
+	}
+
+	delayedSavePending = false;
+	const std::string reason = delayedSaveReason.empty() ? "change" : delayedSaveReason;
+	delayedSaveReason.clear();
+	if (!settings->Save())
+	{
+		Logger::GetInstance().WriteLine(
+			LogLevel::Warning,
+			"Settings UI: failed to save delayed settings after " + reason + ".");
+	}
+	else
+	{
+		Logger::GetInstance().WriteLine(
+			LogLevel::Info,
+			"Settings UI: saved delayed settings after "
+			+ reason
+			+ "; rotationSensitivity="
+			+ FormatSettingFloat(settings->rotationSensitivity)
+			+ " zoomSensitivity="
+			+ FormatSettingFloat(settings->zoomSensitivity)
+			+ ".");
+	}
+}
+
+void SettingsWindow::OnDelayedSettingsSaveTimer()
+{
+	FlushPendingSettingsSave();
+}
+
+float SettingsWindow::ReadSliderValueFromCursor(uint32_t sliderID, float fallback) const
+{
+	cIGZWin* root = GetRootWindow();
+	cIGZWin* slider = root ? root->GetChildWindowFromIDRecursive(sliderID) : nullptr;
+	if (!root || !slider)
+	{
+		return fallback;
+	}
+
+	POINT cursor{};
+	HWND activeWindow = GetActiveWindow();
+	if (!activeWindow || !GetCursorPos(&cursor) || !ScreenToClient(activeWindow, &cursor))
+	{
+		return fallback;
+	}
+
+	const int32_t localX = cursor.x - root->GetL();
+	const int32_t left = slider->GetL();
+	const int32_t width = std::max(1, slider->GetW());
+	const float ratio = std::clamp(
+		static_cast<float>(localX - left) / static_cast<float>(width),
+		0.0f,
+		1.0f);
+	return 0.1f + (ratio * 2.9f);
+}
+
+bool SettingsWindow::OnCommandMessage(cGZMessage& msg)
+{
+	if (!settings)
+	{
+		return BakedManagedWindow::OnCommandMessage(msg);
+	}
+
+	if (msg.dwData1 == kCommandValueChanged)
+	{
+		if (msg.dwData2 == kSettingsRotationSliderID)
+		{
+			if (settings->cameraMode != CameraMode::Modern)
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Verbose,
+					"Settings UI: ignored rotation sensitivity slider while Classic camera is selected.");
+				return true;
+			}
+			const float previous = settings->rotationSensitivity;
+			settings->rotationSensitivity = ReadSliderValueFromCursor(
+				kSettingsRotationSliderID,
+				settings->rotationSensitivity);
+			LogOptionChanged(
+				"Settings UI",
+				"Rotation Sensitivity",
+				FormatSettingFloat(previous),
+				FormatSettingFloat(settings->rotationSensitivity),
+				LogLevel::Verbose);
+			ApplySettingsChange("rotation sensitivity change", false);
+			return true;
+		}
+		if (msg.dwData2 == kSettingsZoomSliderID)
+		{
+			if (settings->cameraMode != CameraMode::Modern)
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Verbose,
+					"Settings UI: ignored zoom sensitivity slider while Classic camera is selected.");
+				return true;
+			}
+			const float previous = settings->zoomSensitivity;
+			settings->zoomSensitivity = ReadSliderValueFromCursor(
+				kSettingsZoomSliderID,
+				settings->zoomSensitivity);
+			LogOptionChanged(
+				"Settings UI",
+				"Zoom Sensitivity",
+				FormatSettingFloat(previous),
+				FormatSettingFloat(settings->zoomSensitivity),
+				LogLevel::Verbose);
+			ApplySettingsChange("zoom sensitivity change", false);
+			return true;
+		}
+	}
+
+	return BakedManagedWindow::OnCommandMessage(msg);
+}
+
 bool SettingsWindow::OnButtonClick(uint32_t controlID)
 {
+	if (settings)
+	{
+		const bool modernCameraActive = settings->cameraMode == CameraMode::Modern;
+		switch (controlID)
+		{
+		case kSettingsModernButtonID:
+		{
+			const CameraMode previous = settings->cameraMode;
+			settings->cameraMode = CameraMode::Modern;
+			LogOptionChanged(
+				"Settings UI",
+				"Camera Mode",
+				ToCameraModeString(previous),
+				ToCameraModeString(settings->cameraMode));
+			ApplySettingsChange("camera mode change");
+			if (manager)
+			{
+				manager->RefreshSettingsWindows();
+			}
+			if (callbacks && callbacks->OnCameraModeChanged)
+			{
+				callbacks->OnCameraModeChanged(true);
+			}
+			return true;
+		}
+		case kSettingsClassicButtonID:
+		{
+			const CameraMode previous = settings->cameraMode;
+			settings->cameraMode = CameraMode::Classic;
+			LogOptionChanged(
+				"Settings UI",
+				"Camera Mode",
+				ToCameraModeString(previous),
+				ToCameraModeString(settings->cameraMode));
+			ApplySettingsChange("camera mode change");
+			if (manager)
+			{
+				manager->RefreshSettingsWindows();
+			}
+			if (callbacks && callbacks->OnResetCameraRequested)
+			{
+				callbacks->OnResetCameraRequested();
+			}
+			if (callbacks && callbacks->OnCameraModeChanged)
+			{
+				callbacks->OnCameraModeChanged(false);
+			}
+			return true;
+		}
+		case kSettingsWASDOnButtonID:
+			if (!modernCameraActive)
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Verbose,
+					"Settings UI: ignored WASD Movement On while Classic camera is selected.");
+				return true;
+			}
+			LogOptionChanged("Settings UI", "WASD Movement", ToOnOffString(settings->wasdMovement), "On");
+			settings->wasdMovement = true;
+			ApplySettingsChange("WASD movement change");
+			if (callbacks && callbacks->OnInputSettingsChanged)
+			{
+				callbacks->OnInputSettingsChanged();
+			}
+			return true;
+		case kSettingsWASDOffButtonID:
+			if (!modernCameraActive)
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Verbose,
+					"Settings UI: ignored WASD Movement Off while Classic camera is selected.");
+				return true;
+			}
+			LogOptionChanged("Settings UI", "WASD Movement", ToOnOffString(settings->wasdMovement), "Off");
+			settings->wasdMovement = false;
+			ApplySettingsChange("WASD movement change");
+			if (callbacks && callbacks->OnInputSettingsChanged)
+			{
+				callbacks->OnInputSettingsChanged();
+			}
+			return true;
+		case kSettingsInvertOnButtonID:
+			if (!modernCameraActive)
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Verbose,
+					"Settings UI: ignored Invert Vertical On while Classic camera is selected.");
+				return true;
+			}
+			LogOptionChanged("Settings UI", "Invert Vertical", ToOnOffString(settings->invertVertical), "On");
+			settings->invertVertical = true;
+			ApplySettingsChange("invert vertical change");
+			return true;
+		case kSettingsInvertOffButtonID:
+			if (!modernCameraActive)
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Verbose,
+					"Settings UI: ignored Invert Vertical Off while Classic camera is selected.");
+				return true;
+			}
+			LogOptionChanged("Settings UI", "Invert Vertical", ToOnOffString(settings->invertVertical), "Off");
+			settings->invertVertical = false;
+			ApplySettingsChange("invert vertical change");
+			return true;
+		case kSettingsRedrawOffButtonID:
+			if (!modernCameraActive)
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Verbose,
+					"Settings UI: ignored Redraw Aggression Classic while Classic camera is selected.");
+				return true;
+			}
+			LogOptionChanged(
+				"Settings UI",
+				"Redraw Aggression",
+				ToRedrawAggressionString(settings->redrawAggression),
+				"Classic");
+			settings->redrawAggression = RedrawAggression::Classic;
+			ApplySettingsChange("redraw aggression change");
+			if (callbacks && callbacks->OnRedrawAggressionChanged)
+			{
+				callbacks->OnRedrawAggressionChanged();
+			}
+			if (callbacks && callbacks->OnDebugLoggingChanged)
+			{
+				callbacks->OnDebugLoggingChanged();
+			}
+			return true;
+		case kSettingsRedrawNormalButtonID:
+			if (!modernCameraActive)
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Verbose,
+					"Settings UI: ignored Redraw Aggression Normal while Classic camera is selected.");
+				return true;
+			}
+			LogOptionChanged(
+				"Settings UI",
+				"Redraw Aggression",
+				ToRedrawAggressionString(settings->redrawAggression),
+				"Normal");
+			settings->redrawAggression = RedrawAggression::Normal;
+			ApplySettingsChange("redraw aggression change");
+			if (callbacks && callbacks->OnRedrawAggressionChanged)
+			{
+				callbacks->OnRedrawAggressionChanged();
+			}
+			return true;
+		case kSettingsRedrawHighButtonID:
+			if (!modernCameraActive)
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Verbose,
+					"Settings UI: ignored Redraw Aggression High while Classic camera is selected.");
+				return true;
+			}
+			LogOptionChanged(
+				"Settings UI",
+				"Redraw Aggression",
+				ToRedrawAggressionString(settings->redrawAggression),
+				"High");
+			settings->redrawAggression = RedrawAggression::High;
+			ApplySettingsChange("redraw aggression change");
+			if (callbacks && callbacks->OnRedrawAggressionChanged)
+			{
+				callbacks->OnRedrawAggressionChanged();
+			}
+			return true;
+		case kSettingsRedrawAggressiveButtonID:
+			if (!modernCameraActive)
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Verbose,
+					"Settings UI: ignored Redraw Aggression Extreme while Classic camera is selected.");
+				return true;
+			}
+			LogOptionChanged(
+				"Settings UI",
+				"Redraw Aggression",
+				ToRedrawAggressionString(settings->redrawAggression),
+				"Extreme");
+			settings->redrawAggression = RedrawAggression::Extreme;
+			ApplySettingsChange("redraw aggression change");
+			if (callbacks && callbacks->OnRedrawAggressionChanged)
+			{
+				callbacks->OnRedrawAggressionChanged();
+			}
+			return true;
+		case kSettingsRestoreDefaultsButtonID:
+		{
+			const CameraMode previousCameraMode = settings->cameraMode;
+			const bool previousWASD = settings->wasdMovement;
+			const float previousRotationSensitivity = settings->rotationSensitivity;
+			const float previousZoomSensitivity = settings->zoomSensitivity;
+			const bool previousInvertVertical = settings->invertVertical;
+			const RedrawAggression previousRedrawAggression = settings->redrawAggression;
+			const DebugLogging previousDebugLogging = settings->debugLogging;
+			settings->RestoreDefaults();
+			LogOptionChanged(
+				"Settings UI",
+				"Camera Mode",
+				ToCameraModeString(previousCameraMode),
+				ToCameraModeString(settings->cameraMode));
+			LogOptionChanged(
+				"Settings UI",
+				"WASD Movement",
+				ToOnOffString(previousWASD),
+				ToOnOffString(settings->wasdMovement));
+			LogOptionChanged(
+				"Settings UI",
+				"Rotation Sensitivity",
+				FormatSettingFloat(previousRotationSensitivity),
+				FormatSettingFloat(settings->rotationSensitivity));
+			LogOptionChanged(
+				"Settings UI",
+				"Zoom Sensitivity",
+				FormatSettingFloat(previousZoomSensitivity),
+				FormatSettingFloat(settings->zoomSensitivity));
+			LogOptionChanged(
+				"Settings UI",
+				"Invert Vertical",
+				ToOnOffString(previousInvertVertical),
+				ToOnOffString(settings->invertVertical));
+			LogOptionChanged(
+				"Settings UI",
+				"Redraw Aggression",
+				ToRedrawAggressionString(previousRedrawAggression),
+				ToRedrawAggressionString(settings->redrawAggression));
+			LogOptionChanged(
+				"Settings UI",
+				"Diagnostics Logging",
+				ToDebugLoggingString(previousDebugLogging),
+				ToDebugLoggingString(settings->debugLogging));
+			ApplySettingsChange("restore defaults");
+			if (manager)
+			{
+				manager->RefreshSettingsWindows();
+				manager->ScheduleSettingsWindowReopen();
+			}
+			if (callbacks && callbacks->OnCameraModeChanged)
+			{
+				callbacks->OnCameraModeChanged(settings->cameraMode == CameraMode::Modern);
+			}
+			if (callbacks && callbacks->OnInputSettingsChanged)
+			{
+				callbacks->OnInputSettingsChanged();
+			}
+			if (callbacks && callbacks->OnRedrawAggressionChanged)
+			{
+				callbacks->OnRedrawAggressionChanged();
+			}
+			return true;
+		}
+		case kSettingsResetCameraButtonID:
+			if (callbacks && callbacks->OnResetCameraRequested)
+			{
+				callbacks->OnResetCameraRequested();
+			}
+			return true;
+		case kSettingsAdvancedButtonID:
+			if (manager)
+			{
+				manager->ScheduleDeferredWindowOpen(DeferredWindowOpen::AdvancedSettings);
+			}
+			return true;
+		default:
+			break;
+		}
+	}
+
 	if (controlID == kSettingsReadChangelogButtonID)
 	{
 		if (manager)
 		{
-			manager->ShowGreetingWindow();
+			manager->ScheduleDeferredWindowOpen(DeferredWindowOpen::Changelog);
 		}
 		return true;
 	}
@@ -580,6 +1342,7 @@ bool SettingsWindow::OnButtonClick(uint32_t controlID)
 
 void SettingsWindow::OnClosed()
 {
+	FlushPendingSettingsSave();
 	if (manager)
 	{
 		manager->OnSettingsWindowClosed();
@@ -670,6 +1433,207 @@ ControlsWindow::ControlsWindow()
 		kControlsCloseXButtonID,
 		kControlsOKButtonID)
 {
+}
+
+AdvancedSettingsWindow::AdvancedSettingsWindow()
+	: BakedManagedWindow(
+		"Advanced Settings UI",
+		kAdvancedWindowResourceInstance,
+		kAdvancedWindowCLSID,
+		kAdvancedCloseXButtonID,
+		kAdvancedCloseButtonID),
+	settings(nullptr),
+	callbacks(nullptr)
+{
+}
+
+void AdvancedSettingsWindow::SetSettings(PluginSettings* pluginSettings)
+{
+	settings = pluginSettings;
+}
+
+void AdvancedSettingsWindow::SetCallbacks(const SC4WindowManagerCallbacks* managerCallbacks)
+{
+	callbacks = managerCallbacks;
+}
+
+void AdvancedSettingsWindow::RefreshFromSettings()
+{
+	SyncControlsFromSettings();
+}
+
+void AdvancedSettingsWindow::OnCreated()
+{
+	SyncControlsFromSettings();
+}
+
+void AdvancedSettingsWindow::SyncControlsFromSettings()
+{
+	if (!settings)
+	{
+		return;
+	}
+
+	const uint32_t redrawIDs[4] = {
+		kSettingsRedrawOffButtonID,
+		kSettingsRedrawNormalButtonID,
+		kSettingsRedrawHighButtonID,
+		kSettingsRedrawAggressiveButtonID,
+	};
+	const bool modernCameraActive = settings->cameraMode == CameraMode::Modern;
+	uint32_t selectedRedrawID = modernCameraActive ? kSettingsRedrawNormalButtonID : kSettingsRedrawOffButtonID;
+	if (modernCameraActive)
+	{
+		switch (settings->redrawAggression)
+		{
+		case RedrawAggression::Classic:
+			selectedRedrawID = kSettingsRedrawOffButtonID;
+			break;
+		case RedrawAggression::High:
+			selectedRedrawID = kSettingsRedrawHighButtonID;
+			break;
+		case RedrawAggression::Extreme:
+			selectedRedrawID = kSettingsRedrawAggressiveButtonID;
+			break;
+		default:
+			break;
+		}
+	}
+	ApplyButtonChoice(GetRootWindow(), selectedRedrawID, redrawIDs, 4);
+	if (modernCameraActive)
+	{
+		SetControlsEnabled(GetRootWindow(), redrawIDs, 4, true);
+	}
+	else
+	{
+		SetControlEnabled(GetRootWindow(), kSettingsRedrawOffButtonID, true);
+		SetControlEnabled(GetRootWindow(), kSettingsRedrawNormalButtonID, false);
+		SetControlEnabled(GetRootWindow(), kSettingsRedrawHighButtonID, false);
+		SetControlEnabled(GetRootWindow(), kSettingsRedrawAggressiveButtonID, false);
+	}
+
+	const uint32_t debugLoggingIDs[3] = {
+		kAdvancedDebugLoggingOffButtonID,
+		kAdvancedDebugLoggingNormalButtonID,
+		kAdvancedDebugLoggingVerboseButtonID,
+	};
+	uint32_t selectedDebugLoggingID = kAdvancedDebugLoggingNormalButtonID;
+	switch (settings->debugLogging)
+	{
+	case DebugLogging::Off:
+		selectedDebugLoggingID = kAdvancedDebugLoggingOffButtonID;
+		break;
+	case DebugLogging::Verbose:
+		selectedDebugLoggingID = kAdvancedDebugLoggingVerboseButtonID;
+		break;
+	default:
+		break;
+	}
+	ApplyButtonChoice(GetRootWindow(), selectedDebugLoggingID, debugLoggingIDs, 3);
+}
+
+bool AdvancedSettingsWindow::OnButtonClick(uint32_t controlID)
+{
+	if (settings)
+	{
+		if (settings->cameraMode != CameraMode::Modern && IsRedrawAggressionControl(controlID))
+		{
+			Logger::GetInstance().WriteLine(
+				LogLevel::Verbose,
+				"Advanced Settings UI: ignored Redraw Aggression button while Classic camera is selected.");
+			SyncControlsFromSettings();
+			return true;
+		}
+
+		bool changed = true;
+		bool redrawChanged = false;
+		bool debugLoggingChanged = false;
+		const RedrawAggression previousRedrawAggression = settings->redrawAggression;
+		const DebugLogging previousDebugLogging = settings->debugLogging;
+		switch (controlID)
+		{
+		case kSettingsRedrawOffButtonID:
+			settings->redrawAggression = RedrawAggression::Classic;
+			redrawChanged = true;
+			break;
+		case kSettingsRedrawNormalButtonID:
+			settings->redrawAggression = RedrawAggression::Normal;
+			redrawChanged = true;
+			break;
+		case kSettingsRedrawHighButtonID:
+			settings->redrawAggression = RedrawAggression::High;
+			redrawChanged = true;
+			break;
+		case kSettingsRedrawAggressiveButtonID:
+			settings->redrawAggression = RedrawAggression::Extreme;
+			redrawChanged = true;
+			break;
+		case kAdvancedDebugLoggingOffButtonID:
+			settings->debugLogging = DebugLogging::Off;
+			debugLoggingChanged = true;
+			break;
+		case kAdvancedDebugLoggingNormalButtonID:
+			settings->debugLogging = DebugLogging::Normal;
+			debugLoggingChanged = true;
+			break;
+		case kAdvancedDebugLoggingVerboseButtonID:
+			settings->debugLogging = DebugLogging::Verbose;
+			debugLoggingChanged = true;
+			break;
+		default:
+			changed = false;
+			break;
+		}
+
+		if (changed)
+		{
+			if (redrawChanged)
+			{
+				LogOptionChanged(
+					"Advanced Settings UI",
+					"Redraw Aggression",
+					ToRedrawAggressionString(previousRedrawAggression),
+					ToRedrawAggressionString(settings->redrawAggression));
+			}
+			if (debugLoggingChanged)
+			{
+				LogOptionChanged(
+					"Advanced Settings UI",
+					"Diagnostics Logging",
+					ToDebugLoggingString(previousDebugLogging),
+					ToDebugLoggingString(settings->debugLogging));
+			}
+
+			const char* reason = redrawChanged && debugLoggingChanged
+				? "advanced settings change"
+				: redrawChanged ? "redraw aggression change"
+				: "diagnostics change";
+			if (!settings->Save())
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Warning,
+					std::string("Advanced Settings UI: failed to save settings after ") + reason + ".");
+			}
+			else
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Info,
+					std::string("Advanced Settings UI: saved settings after ") + reason + ".");
+			}
+			SyncControlsFromSettings();
+			if (redrawChanged && callbacks && callbacks->OnRedrawAggressionChanged)
+			{
+				callbacks->OnRedrawAggressionChanged();
+			}
+			if (debugLoggingChanged && callbacks && callbacks->OnDebugLoggingChanged)
+			{
+				callbacks->OnDebugLoggingChanged();
+			}
+			return true;
+		}
+	}
+
+	return BakedManagedWindow::OnButtonClick(controlID);
 }
 
 ControlLaboratoryWindow::ControlLaboratoryWindow()
@@ -827,12 +1791,15 @@ bool ControlLaboratoryWindow::IsVisible() const
 	return rootWindow && rootWindow->IsVisible();
 }
 
+bool ControlLaboratoryWindow::ContainsPoint(int32_t parentX, int32_t parentY) const
+{
+	return WindowContainsParentPoint(rootWindow, parentX, parentY);
+}
+
 bool ControlLaboratoryWindow::HandleMouseWheel(
 	int32_t wheelDelta, int32_t parentX, int32_t parentY, intptr_t nativeWindowHandle)
 {
-	if (!IsVisible()
-		|| parentX < rootWindow->GetL() || parentX >= rootWindow->GetR()
-		|| parentY < rootWindow->GetT() || parentY >= rootWindow->GetB())
+	if (!ContainsPoint(parentX, parentY))
 	{
 		return false;
 	}
@@ -1360,6 +2327,7 @@ bool ControlLaboratoryWindow::DoWinMsg(cIGZWin* pWin, uint32_t messageID, uint32
 
 void SC4WindowManager::OnCityLoaded(PluginSettings& settings)
 {
+	pendingSettings = &settings;
 	menuButtonWindow.SetWindowManager(this);
 	if (!menuButtonWindow.Create())
 	{
@@ -1388,6 +2356,7 @@ void SC4WindowManager::OnCityLoaded(PluginSettings& settings)
 			const std::string title = std::string("SC4 3D Mouse Camera ") + PluginVersion::String;
 			const std::string message =
 				std::string("SC4-3DMouseCam v") + PluginVersion::String + " installed!\n\n"
+				+ "Camera Options are available from the camera settings button in the upper right of the screen.\n\n"
 				+ "Controls:\n"
 				+ "WASD: Move Camera (optional)\n"
 				+ "Scroll Wheel: Zoom\n"
@@ -1417,6 +2386,11 @@ void SC4WindowManager::OnCityLoaded(PluginSettings& settings)
 	}
 }
 
+void SC4WindowManager::SetCallbacks(SC4WindowManagerCallbacks managerCallbacks)
+{
+	callbacks = std::move(managerCallbacks);
+}
+
 void SC4WindowManager::OnVersionNoticeTimer()
 {
 	if (versionNoticeTimerID != 0)
@@ -1438,6 +2412,54 @@ void SC4WindowManager::OnVersionNoticeTimer()
 			LogLevel::Info,
 			"Window Manager: delayed version notice timer fired.");
 		ShowVersionNoticeIfNeeded(*settings);
+	}
+}
+
+void SC4WindowManager::OnSettingsReopenTimer()
+{
+	if (settingsReopenTimerID != 0)
+	{
+		KillTimer(NULL, static_cast<UINT_PTR>(settingsReopenTimerID));
+		settingsReopenTimerID = 0;
+	}
+	if (g_DelayedSettingsReopenManager == this)
+	{
+		g_DelayedSettingsReopenManager = nullptr;
+	}
+
+	settingsWindow.Destroy();
+	ShowSettingsWindow();
+}
+
+void SC4WindowManager::OnDeferredWindowOpenTimer()
+{
+	if (deferredWindowOpenTimerID != 0)
+	{
+		KillTimer(NULL, static_cast<UINT_PTR>(deferredWindowOpenTimerID));
+		deferredWindowOpenTimerID = 0;
+	}
+	if (g_DelayedWindowOpenManager == this)
+	{
+		g_DelayedWindowOpenManager = nullptr;
+	}
+
+	DeferredWindowOpen window = pendingDeferredWindowOpen;
+	pendingDeferredWindowOpen = DeferredWindowOpen::None;
+
+	switch (window)
+	{
+	case DeferredWindowOpen::AdvancedSettings:
+		ShowAdvancedSettingsWindow();
+		break;
+	case DeferredWindowOpen::Changelog:
+		if (ShowGreetingWindow())
+		{
+			settingsWindow.SendToBack();
+			greetingWindow.BringToFront();
+		}
+		break;
+	default:
+		break;
 	}
 }
 
@@ -1491,15 +2513,35 @@ bool SC4WindowManager::CloseWindow(SC4WindowHandle handle)
 
 void SC4WindowManager::OnCityShutdown()
 {
+	if (settingsReopenTimerID != 0)
+	{
+		KillTimer(NULL, static_cast<UINT_PTR>(settingsReopenTimerID));
+		settingsReopenTimerID = 0;
+	}
 	if (versionNoticeTimerID != 0)
 	{
 		KillTimer(NULL, static_cast<UINT_PTR>(versionNoticeTimerID));
 		versionNoticeTimerID = 0;
 	}
+	if (deferredWindowOpenTimerID != 0)
+	{
+		KillTimer(NULL, static_cast<UINT_PTR>(deferredWindowOpenTimerID));
+		deferredWindowOpenTimerID = 0;
+	}
+	pendingDeferredWindowOpen = DeferredWindowOpen::None;
 	pendingVersionNoticeSettings = nullptr;
+	pendingSettings = nullptr;
 	if (g_DelayedVersionNoticeManager == this)
 	{
 		g_DelayedVersionNoticeManager = nullptr;
+	}
+	if (g_DelayedSettingsReopenManager == this)
+	{
+		g_DelayedSettingsReopenManager = nullptr;
+	}
+	if (g_DelayedWindowOpenManager == this)
+	{
+		g_DelayedWindowOpenManager = nullptr;
 	}
 	CloseAllWindows();
 }
@@ -1561,9 +2603,27 @@ bool SC4WindowManager::ShowControlsWindow()
 	return controlsWindow.Create();
 }
 
+bool SC4WindowManager::ShowAdvancedSettingsWindow()
+{
+	advancedSettingsWindow.Destroy();
+	advancedSettingsWindow.SetSettings(pendingSettings);
+	advancedSettingsWindow.SetCallbacks(&callbacks);
+	if (!advancedSettingsWindow.Create())
+	{
+		return false;
+	}
+
+	settingsWindow.SendToBack();
+	advancedSettingsWindow.BringToFront();
+	advancedSettingsWindow.BringToFront();
+	return true;
+}
+
 bool SC4WindowManager::ShowSettingsWindow()
 {
 	settingsWindow.SetWindowManager(this);
+	settingsWindow.SetSettings(pendingSettings);
+	settingsWindow.SetCallbacks(&callbacks);
 	if (!settingsWindow.Create())
 	{
 		menuButtonWindow.SetSettingsOpen(false);
@@ -1588,9 +2648,63 @@ void SC4WindowManager::OnSettingsWindowClosed()
 	menuButtonWindow.SetSettingsOpen(false);
 }
 
+void SC4WindowManager::RefreshSettingsWindows()
+{
+	if (settingsWindow.IsVisible())
+	{
+		settingsWindow.RefreshFromSettings();
+	}
+	if (advancedSettingsWindow.IsVisible())
+	{
+		advancedSettingsWindow.RefreshFromSettings();
+	}
+}
+
+void SC4WindowManager::ScheduleSettingsWindowReopen()
+{
+	if (settingsReopenTimerID != 0)
+	{
+		KillTimer(NULL, static_cast<UINT_PTR>(settingsReopenTimerID));
+		settingsReopenTimerID = 0;
+	}
+
+	g_DelayedSettingsReopenManager = this;
+	settingsReopenTimerID = static_cast<uintptr_t>(
+		SetTimer(NULL, 0, kSettingsReopenDelayMs, DelayedSettingsReopenTimerProc));
+	if (settingsReopenTimerID == 0)
+	{
+		Logger::GetInstance().WriteLine(
+			LogLevel::Warning,
+			"Settings UI: failed to schedule settings window refresh after defaults.");
+	}
+}
+
+void SC4WindowManager::ScheduleDeferredWindowOpen(DeferredWindowOpen window)
+{
+	if (deferredWindowOpenTimerID != 0)
+	{
+		KillTimer(NULL, static_cast<UINT_PTR>(deferredWindowOpenTimerID));
+		deferredWindowOpenTimerID = 0;
+	}
+
+	pendingDeferredWindowOpen = window;
+	g_DelayedWindowOpenManager = this;
+	deferredWindowOpenTimerID = static_cast<uintptr_t>(
+		SetTimer(NULL, 0, kDeferredWindowOpenDelayMs, DeferredWindowOpenTimerProc));
+	if (deferredWindowOpenTimerID == 0)
+	{
+		Logger::GetInstance().WriteLine(
+			LogLevel::Warning,
+			"Settings UI: failed to schedule child window open; opening immediately.");
+		OnDeferredWindowOpenTimer();
+	}
+}
+
 void SC4WindowManager::CloseAllWindows()
 {
+	settingsWindow.OnDelayedSettingsSaveTimer();
 	settingsWindow.Destroy();
+	advancedSettingsWindow.Destroy();
 	controlsWindow.Destroy();
 	greetingWindow.Destroy();
 	controlLaboratory.Destroy();
@@ -1620,9 +2734,45 @@ bool SC4WindowManager::HasVisibleWindow() const
 	{
 		return true;
 	}
+	if (advancedSettingsWindow.IsVisible())
+	{
+		return true;
+	}
 	for (const BasicWindowEntry& entry : basicWindows)
 	{
 		if (entry.window->IsVisible())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool SC4WindowManager::IsPointOverVisibleWindow(int32_t parentX, int32_t parentY) const
+{
+	if (controlsWindow.ContainsPoint(parentX, parentY))
+	{
+		return true;
+	}
+	if (greetingWindow.ContainsPoint(parentX, parentY))
+	{
+		return true;
+	}
+	if (controlLaboratory.ContainsPoint(parentX, parentY))
+	{
+		return true;
+	}
+	if (settingsWindow.ContainsPoint(parentX, parentY))
+	{
+		return true;
+	}
+	if (advancedSettingsWindow.ContainsPoint(parentX, parentY))
+	{
+		return true;
+	}
+	for (const BasicWindowEntry& entry : basicWindows)
+	{
+		if (entry.window->ContainsPoint(parentX, parentY))
 		{
 			return true;
 		}
