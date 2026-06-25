@@ -24,14 +24,18 @@ Older disc/retail builds are not supported, and at this time support is not plan
 
 ## Current Controls
 
+- **WASD**: Moves the camera when Modern Camera and WASD Movement are enabled.
+- **Shift + WASD**: Moves the camera faster while WASD Movement is enabled.
 - **M3 + horizontal drag**: Rotates the camera.
 - **M3 + vertical drag**: Adjusts the camera pitch.
 - **Mouse wheel**: Smoothly zooms while preserving the current camera angle.
-- **F8**: Dumps the current camera and renderer state to a file `SC4-3DMouseCam.log` located in the plugins folder for debugging.
+- **F8**: Dumps the current camera and renderer state to `Plugins\SC4-3DMouseCam\SC4-3DMouseCam.log` for debugging.
+
+Camera options are available in-game through the floating camera settings button in the upper-right corner of the screen. The settings window can switch between Modern and Classic camera mode in real time, reset the camera location, show the changelog, and open Advanced Settings for redraw aggression and diagnostics logging.
 
 ## Debug Logging
 
-The plugin writes debug logs to the Plugins folder:
+The plugin writes debug logs to `Plugins\SC4-3DMouseCam\`:
 
 - `SC4-3DMouseCam.log`
 - `SC4-3DMouseCam.last`
@@ -42,6 +46,8 @@ These files can be safely ignored or deleted.
 
 - [SimCity 4 default camera behavior](docs/default-camera.md) records the verified native zoom, pitch, yaw, and rotation behavior.
 - [Region preview save fix](docs/region-preview-save-fix.md) documents the save lifecycle integration, rejected hook approaches, and final normalization design.
+- [Settings window workflow](docs/settings-workflow.md) documents the current in-game settings behavior, Classic/Modern mode rules, WASD capture, redraw options, logging, and child-window z-order workflow.
+- [SimCity 4 native UI research](docs/native-ui-research.md) records the control recipes, message IDs, scrolling model, ABI hazards, and companion-DAT workflow discovered while building the settings-window prototype.
 
 ## Building
 

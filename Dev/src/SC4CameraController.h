@@ -124,6 +124,7 @@ public:
 	void EndRotationGesture();
 
 	bool ApplyDelta(float pitchDelta, float yawDelta, bool updateYaw);
+	bool PanByKeyboard(float rightSteps, float forwardSteps);
 	bool ZoomByWheel(int32_t wheelDelta, bool& changed);
 	bool ForceFullRedraw();
 	bool DumpCameraInfo(const char* reason) const;
