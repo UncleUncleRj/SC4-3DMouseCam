@@ -10,7 +10,8 @@ The test window is a native SimCity 4 UI window. It does not use ImGui and does 
 - `tools/build_sc4_ui_dat.py` packages that script into an uncompressed DBPF file.
 - `Dev/ui/SC4-3DMouseCam-TestUI.dat` is the generated companion resource.
 - The Visual Studio post-build step copies the DAT beside the plugin DLL.
-- `Dev/src/TestWindow.cpp` loads the resource, registers the controls, handles notifications, scrolls the content, logs interactions, and writes `test.json`.
+- `Dev/src/SC4WindowManager.cpp` owns plugin windows and notification dialogs; its control-laboratory window registers controls, handles notifications, scrolls content, logs interactions, and writes `test.json`.
+- `docs/changelog.md` is baked into the first-install greeting window by the DAT builder. The greeting version is read from `Dev/src/PluginVersion.h`, not from the changelog text.
 
 The DBPF resource identifiers are:
 
@@ -23,6 +24,42 @@ The DBPF resource identifiers are:
 
 The window is instantiated through `cIGZUIScriptService::CreateWindowFromScript`. Controls should be authored in the UI script and then retrieved by ID with `GetChildWindowFromIDRecursive`.
 
+## Window-manager architecture
+
+`SC4WindowManager` is the plugin's single owner and integration point for UI. `Main.cpp` forwards lifecycle and input events to it instead of knowing how individual windows are constructed.
+
+The manager currently owns:
+
+- the baked first-install/version/changelog greeting window;
+- the baked Controls help popup opened from the greeting window;
+- the native control-laboratory window.
+
+The production settings and diagnostics windows should be added as additional managed window objects. Each window keeps its own control IDs, layout state, and notification handling, while the manager coordinates:
+
+- showing windows and bringing existing instances to the front;
+- closing every plugin window during city shutdown;
+- reporting whether any managed window is visible;
+- routing mouse-wheel input to the window beneath the pointer;
+- creating basic SC4 notification dialogs through the verified native wrapper.
+
+This keeps game lifecycle policy in one place and prevents `Main.cpp` from accumulating window-specific resource IDs or control behavior.
+
+The public factory supports three creation forms:
+
+```cpp
+manager.CreateManagedWindow();
+manager.CreateManagedWindow(SC4BasicWindowOptions{ /* ... */ });
+manager.CreateManagedWindow(SC4WindowTemplate::ControlLaboratory);
+```
+
+The parameterless form creates a blank 420-by-240 window with only the native X close button. Basic-window options accept a clamped width and height, title, wrapped body text, and one of four button arrangements: X only, OK, Close, or Accept. The latter three retain the X and add the named footer button.
+
+The factory returns an `SC4WindowHandle`; zero (`InvalidSC4WindowHandle`) indicates failure. The manager retains ownership and accepts the handle in `CloseWindow`. Named templates are used for windows with specialized controls or behavior. The control laboratory is the first registered template; Settings and Diagnostics should follow the same pattern.
+
+Basic windows are instantiated from the generic `SC4-3DMouseCam-BasicUI.txt` resource packed into the companion DAT. Runtime customization uses captions, `SetSize`, and relative `GZWinMoveTo` anchoring; it does not use either unsafe `SetArea` overload.
+
+Important caveat: runtime customization is not yet as reliable as baked script layout. A dynamically populated basic window appeared as a blank shell or ignored runtime size/caption changes in-game. For user-facing windows that must work on first load, prefer a dedicated baked UI resource and follow the control-laboratory pattern: create from script, add to the SC4 parent, center using `rootWindow->GetW()`/`GetH()`, set the winproc, then show.
+
 ## Resource and build behavior
 
 The UI DAT is a required runtime resource, unlike the user settings JSON files. The JSON files are created by the plugin as needed and must not be copied by the build.
@@ -30,10 +67,19 @@ The UI DAT is a required runtime resource, unlike the user settings JSON files. 
 The DBPF writer currently emits:
 
 - a 96-byte DBPF header;
-- the UTF-8 legacy UI script as one uncompressed resource;
-- one 20-byte index entry.
+- UTF-8 legacy UI scripts as uncompressed resources;
+- one 20-byte index entry per resource.
 
-The packager also substitutes the verified ordinance-style checkbox recipe. Keeping this substitution in the build step allows the readable source to remain easy to edit while preserving the exact native bitmap configuration that SC4 expects.
+The packager currently emits three resources in the same type/group:
+
+| Instance | Purpose |
+| --- | --- |
+| `0x3D0C0701` | Native control laboratory |
+| `0x3D0C0703` | Generic basic-window template |
+| `0x3D0C0705` | First-install greeting/changelog window |
+| `0x3D0C0707` | Controls help popup |
+
+The packager also substitutes the verified ordinance-style checkbox recipe and bakes `docs/changelog.md` into the greeting resource. The greeting heading is generated as `SC4-3DMouseCam v{PluginVersion::String} installed!`, so the version number remains centralized in `Dev/src/PluginVersion.h`. Keeping these transformations in the build step allows readable source files to remain easy to edit while preserving the exact native bitmap and text configuration that SC4 expects.
 
 ## UI script coordinates
 
@@ -46,6 +92,8 @@ area=(left, top, right, bottom)
 They are not `(left, top, width, height)`. Treating the last two values as dimensions produced invalid layouts and, in some cases, parser or runtime crashes.
 
 Child coordinates are relative to the root window. The current root is 570 by 600 pixels.
+
+Caption attributes are literal strings. SC4's UI parser does not HTML/XML-decode text entities in captions; `&amp;` displays as `&amp;`, not `&`. Preserve plain ampersands in authored text. Only avoid or replace characters that would break the quoted attribute itself, such as double quotes and angle brackets.
 
 ## Window layout convention
 
@@ -132,9 +180,11 @@ The root window receives command messages with `dwMessageType == 3`.
 
 Buttons also emit additional state messages ending in F7, F8, and F9. These are useful diagnostic data but should not be treated as completed clicks.
 
+`GZWinOptGrp` also creates anonymous internal option buttons. They emit button-state notifications with control ID `0` (observed as `0x287259F7`) immediately before the owning option-group selection notification. The laboratory records these as `optionGroupInternalButton`.
+
 Only `DoWinProcMessage` should perform event handling. Forwarding both `DoWinMsg` and `DoWinProcMessage` created duplicate interaction records.
 
-Every laboratory interaction is written to the normal plugin log and serialized into `test.json` beside the DLL.
+Every laboratory interaction is written to the normal plugin log and serialized into `Plugins/SC4-3DMouseCam/test.json`.
 
 ## Scrollbar handling
 
@@ -144,7 +194,12 @@ The working laboratory implementation therefore maps the cursor position to a lo
 
 - clicking the upper/lower arrow zones moves by 40 pixels;
 - clicking or dragging the track maps its cursor ratio to the 0-600 content range;
-- both actions call the same `ApplyScrollPosition` path.
+- turning the mouse wheel while the pointer is inside the window activates the corresponding native scrollbar arrow;
+- all scrolling inputs call the same `ApplyScrollPosition` path.
+
+`WM_MOUSEWHEEL` coordinates are screen-relative. The canvas Win32 filter converts them to canvas-client coordinates, hit-tests the native root window, and forwards the wheel delta only when the pointer is inside it. Wheel input outside the window remains available to the city camera. Partial high-resolution wheel deltas are accumulated until they form a standard 120-unit notch.
+
+Each completed wheel notch is translated into the same native arrow-button input used by the scrollbar itself. SC4 updates the thumb, and the resulting scrollbar notification moves the content by the matching 40-pixel line size. This avoids maintaining independent content and thumb positions.
 
 This keeps the scrollbar thumb and content movement coupled without calling an unverified virtual method.
 
@@ -182,7 +237,9 @@ Safe geometry queries used by the laboratory are `GetL`, `GetT`, `GetR`, and `Ge
 
 ## Lifecycle and input behavior
 
-The first-install/changelog popup is intentionally a basic SC4 popup for now. It is displayed during the first city load for a newly installed plugin version.
+The first-install/changelog popup is a baked native SC4 window generated from `docs/changelog.md`. It is displayed during the first city load for a newly installed plugin version. Controls are intentionally kept out of the changelog body; the greeting window has a `View Controls` button that opens a smaller baked controls popup.
+
+Creating the managed greeting immediately during city-load notification caused a crash. Deferring it by a short Win32 timer, currently 3 seconds, allowed the city view and UI hierarchy to finish initializing before the plugin created its own window.
 
 The control laboratory is created only after the UI services and city view are available. While it is visible, camera input is suppressed so clicks and drags intended for controls cannot move the city camera.
 
@@ -190,13 +247,13 @@ The root window and its controls should be reused by showing/hiding them. Avoid 
 
 ## Persistence files
 
-Runtime files are located beside the plugin DLL, which allows the plugin folder to be discovered dynamically rather than assuming a Documents path:
+Runtime files are located in the `SC4-3DMouseCam` subfolder beside the plugin DLL. The plugin discovers that location dynamically rather than assuming a Documents path:
 
 - `SC4-3DMouseCam.json`: persistent user settings and installed-version marker.
 - `test.json`: control-laboratory event/state output.
 - `SC4-3DMouseCam.log`: plugin log.
 
-These files are generated at runtime and are not build artifacts.
+These files are generated at runtime and are not build artifacts. Existing root-level files from earlier development builds are migrated into the subfolder before the logger or settings system opens them. The DLL and companion UI DAT remain in the Plugins root.
 
 ## Research sources
 
@@ -222,6 +279,6 @@ For the settings and diagnostics UI:
 ## Open questions
 
 - The concrete slider, spinner, text-edit, option-group, and scrollbar interfaces still need ABI-safe method declarations before values can be queried directly.
-- Mouse-wheel routing to a native child scrollbar has not yet been confirmed.
+- Direct ABI-safe access to a native scrollbar's numeric value has not yet been confirmed; wheel input currently activates its native arrow controls.
 - Keyboard focus, tab order, and accessibility behavior need a dedicated pass.
 - The final settings window should replace laboratory-only controls and remove `test.json` event recording.

@@ -16,7 +16,7 @@
     <ClCompile Include="src\PluginSettings.cpp" />
     <ClCompile Include="src\SC4CameraController.cpp" />
     <ClCompile Include="src\SC4VersionDetection.cpp" />
-    <ClCompile Include="src\TestWindow.cpp" />
+    <ClCompile Include="src\SC4WindowManager.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>
@@ -128,9 +128,10 @@ xcopy "$(ProjectDir)ui\SC4-3DMouseCam-TestUI.dat" "$(PLUGINS_FOLDER)" /Y /I</Com
     <ClInclude Include="src\PluginVersion.h" />
     <ClInclude Include="src\SC4CameraController.h" />
     <ClInclude Include="src\SC4VersionDetection.h" />
-    <ClInclude Include="src\TestWindow.h" />
+    <ClInclude Include="src\SC4WindowManager.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="ui\SC4-3DMouseCam-BasicUI.txt" />
     <None Include="ui\SC4-3DMouseCam-TestUI.dat" />
     <None Include="ui\SC4-3DMouseCam-TestUI.txt" />
   </ItemGroup>

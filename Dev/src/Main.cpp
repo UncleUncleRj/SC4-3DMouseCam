@@ -3,7 +3,6 @@
 #include "cIGZMessage2Standard.h"
 #include "cIGZMessageServer2.h"
 #include "cIGZWinProcFilterW32.h"
-#include "cRZBaseString.h"
 #include "cRZMessage2COMDirector.h"
 #include "GZServPtrs.h"
 #include "Logger.h"
@@ -12,12 +11,13 @@
 #include "PluginVersion.h"
 #include "SC4CameraController.h"
 #include "SC4VersionDetection.h"
-#include "TestWindow.h"
+#include "SC4WindowManager.h"
 #include <Windows.h>
 #include <windowsx.h>
 
 #include <cmath>
 #include <exception>
+#include <filesystem>
 #include <string>
 
 static constexpr uint32_t kSC4MessagePostCityInit = 0x26D31EC1;
@@ -32,9 +32,6 @@ static constexpr UINT kCameraDumpConfirmationDelayMs = 2500;
 static constexpr UINT kNativeCameraBaselineDelayMs = 1000;
 static constexpr UINT kDumpCameraInfoKey = VK_F8;
 
-using CreateSC4NotificationDialog = bool(__cdecl*)(cIGZString const& caption, cIGZString const& message);
-static constexpr uintptr_t kCreateSC4NotificationDialogAddress = 0x78dd80;
-
 // Global State
 bool g_IsCityLoaded = false;
 bool g_IsModernCamEnabled = true;
@@ -45,7 +42,7 @@ POINT g_LastMousePos = { 0, 0 };
 HWND g_CapturedMouseWindow = NULL;
 SC4CameraController g_CameraController;
 PluginSettings g_Settings;
-TestWindow g_TestWindow;
+SC4WindowManager g_WindowManager;
 
 UINT_PTR g_IdleTimerID = 0;
 UINT_PTR g_PeriodicRedrawTimerID = 0;
@@ -226,22 +223,6 @@ bool RegisterNotifications(cIGZMessageTarget2* target)
     return false;
 }
 
-bool ShowSC4Notification(const char* caption, const char* message)
-{
-    if (!SC4VersionDetection::IsDigitalDistributionVersion()) {
-        return false;
-    }
-
-    const auto createDialog = reinterpret_cast<CreateSC4NotificationDialog>(
-        kCreateSC4NotificationDialogAddress);
-    cRZBaseString captionString(caption);
-    cRZBaseString messageString(message);
-    // The native function's Boolean result is not a success indicator. The
-    // reference SC4 DLL utilities intentionally ignore it.
-    createDialog(captionString, messageString);
-    return true;
-}
-
 VOID CALLBACK RedrawTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
     Logger& log = Logger::GetInstance();
     if (idEvent == g_IdleTimerID && g_IdleTimerID != 0) {
@@ -286,7 +267,23 @@ VOID CALLBACK NativeCameraBaselineTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEve
 
 LRESULT HandleCanvasMouseMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bool& handled)
 {
-    if (!g_IsCityLoaded || g_TestWindow.IsVisible()) {
+    if (!g_IsCityLoaded) {
+        return 0;
+    }
+
+    if (g_WindowManager.HasVisibleWindow()) {
+        if (uMsg == WM_MOUSEWHEEL) {
+            // WM_MOUSEWHEEL supplies screen coordinates. Convert them to the
+            // canvas coordinates used by the native SC4 window hierarchy.
+            POINT cursor = MakePointFromLParam(lParam);
+            if (ScreenToClient(hWnd, &cursor)
+                && g_WindowManager.HandleMouseWheel(
+                    GET_WHEEL_DELTA_WPARAM(wParam), cursor.x, cursor.y,
+                    reinterpret_cast<intptr_t>(hWnd))) {
+                handled = true;
+                return 0;
+            }
+        }
         return 0;
     }
 
@@ -448,7 +445,8 @@ public:
             Logger::GetInstance().Initialize(PluginPaths::GetLogPath().string());
         }
         catch (const std::exception&) {
-            Logger::GetInstance().Initialize("SC4-3DMouseCam.log");
+            std::filesystem::create_directories("SC4-3DMouseCam");
+            Logger::GetInstance().Initialize("SC4-3DMouseCam/SC4-3DMouseCam.log");
         }
 
         Logger::GetInstance().WriteLine(
@@ -500,10 +498,7 @@ public:
 
         if (msgType == kSC4MessagePostCityInit) {
             Logger::GetInstance().WriteLine(LogLevel::Info, "City Loaded! Activating input handlers...");
-            ShowVersionNoticeIfNeeded();
-            if (!g_TestWindow.Create()) {
-                Logger::GetInstance().WriteLine(LogLevel::Warning, "The native UI test window could not be opened.");
-            }
+            g_WindowManager.OnCityLoaded(g_Settings);
             g_IsCityLoaded = true;
             ResetInputState();
             RegisterCanvasWinProcFilter();
@@ -520,7 +515,7 @@ public:
         }
         else if (msgType == kSC4MessagePreCityShutdown) {
             Logger::GetInstance().WriteLine(LogLevel::Info, "City Shutting Down. Deactivating input handlers...");
-            g_TestWindow.Destroy();
+            g_WindowManager.OnCityShutdown();
             g_CameraController.DumpCameraInfo("pre-city-shutdown");
             g_CameraController.AbandonSavePreviewNormalization();
             g_IsCityLoaded = false;
@@ -537,33 +532,6 @@ public:
     }
 
 private:
-    void ShowVersionNoticeIfNeeded()
-    {
-        if (!g_Settings.NeedsVersionNotice()) {
-            return;
-        }
-
-        const char* title = "SC4 3D Mouse Camera 0.7.0";
-        const char* message =
-            "Welcome to SC4 3D Mouse Camera 0.7.0.\n\n"
-            "This release introduces persistent camera settings and prepares optional WASD camera movement. "
-            "When WASD movement is enabled, the QWE / ASD / ZXC zoning shortcuts will use the Shift key.\n\n"
-            "Your settings are stored in SC4-3DMouseCam.json beside the plugin DLL.";
-
-        if (!ShowSC4Notification(title, message)) {
-            Logger::GetInstance().WriteLine(
-                LogLevel::Warning,
-                "The in-game version notification could not be displayed.");
-            return;
-        }
-
-        if (!g_Settings.AcknowledgeCurrentVersion()) {
-            Logger::GetInstance().WriteLine(
-                LogLevel::Warning,
-                "The version notice was shown, but its acknowledgement could not be saved.");
-        }
-    }
-
     void RegisterCanvasWinProcFilter()
     {
         if (mpCanvasW32) {

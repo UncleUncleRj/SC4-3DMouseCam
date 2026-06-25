@@ -27,11 +27,11 @@ Older disc/retail builds are not supported, and at this time support is not plan
 - **M3 + horizontal drag**: Rotates the camera.
 - **M3 + vertical drag**: Adjusts the camera pitch.
 - **Mouse wheel**: Smoothly zooms while preserving the current camera angle.
-- **F8**: Dumps the current camera and renderer state to a file `SC4-3DMouseCam.log` located in the plugins folder for debugging.
+- **F8**: Dumps the current camera and renderer state to `Plugins\SC4-3DMouseCam\SC4-3DMouseCam.log` for debugging.
 
 ## Debug Logging
 
-The plugin writes debug logs to the Plugins folder:
+The plugin writes debug logs to `Plugins\SC4-3DMouseCam\`:
 
 - `SC4-3DMouseCam.log`
 - `SC4-3DMouseCam.last`
