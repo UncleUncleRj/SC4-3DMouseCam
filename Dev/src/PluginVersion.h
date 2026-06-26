@@ -4,8 +4,8 @@
 
 namespace PluginVersion
 {
-	inline constexpr uint32_t Major = 0;
-	inline constexpr uint32_t Minor = 7;
-	inline constexpr uint32_t Patch = 1;
-	inline constexpr char String[] = "0.7.1";
+    inline constexpr uint32_t Major = 1;
+    inline constexpr uint32_t Minor = 0;
+    inline constexpr uint32_t Patch = 0;
+    inline constexpr char String[] = "1.0.0";
 }

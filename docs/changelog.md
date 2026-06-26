@@ -1,7 +1,6 @@
-0.7.1:
+MAJOR RELEASE 1.0:
+- Toolbars and other UI elements (advisor panels, etc) now allow you to use the mouse wheel to scroll in Modern camera mode.
 - Polished the welcome/changelog window and UI image handling.
-
-0.7.0:
 - Added persistent JSON settings.
 - Added version-aware first-install notice.
 - Added native SC4 window manager foundation.
@@ -11,4 +10,5 @@
 - Added Modern-only redraw aggression controls: Classic, Normal, High, and Extreme.
 - Added diagnostics logging controls.
 - Added Reset Camera Location.
-- Added plugin data folder: Plugins/SC4-ModernCamera/.
+- Added plugin data folder: Plugins/SC4-ModernCamera/
+- Added 3D camera movement and rotation controls.
