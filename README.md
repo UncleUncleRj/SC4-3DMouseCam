@@ -22,14 +22,17 @@ Older disc/retail builds are not supported, and at this time support is not plan
 
 ## Current Controls
 
-- **WASD**: Moves the camera when Modern Camera and WASD Movement are enabled.
-- **Shift + WASD**: Moves the camera faster while WASD Movement is enabled.
+- **WASD**: Moves the camera (optional - can be disabled in-game)
+- - Hold SHIFT to move faster
 - **M3 + horizontal drag**: Rotates the camera.
 - **M3 + vertical drag**: Adjusts the camera pitch.
-- **Mouse wheel**: Smoothly zooms while preserving the current camera angle.
+- - In-game Option to Invert Vertical controls
+- **Mouse wheel**: New smooth zoom experience.
 - **F8**: Dumps the current camera and renderer state to `Plugins\SC4-ModernCamera\SC4-ModernCamera.log` for debugging.
 
-Camera options are available in-game through the floating camera settings button in the upper-right corner of the screen. The settings window can switch between Modern and Classic camera mode in real time, reset the camera location, show the changelog, and open Advanced Settings for redraw aggression and diagnostics logging.
+Camera options are available in-game through the floating camera settings button in the upper-right corner of the screen.
+
+The settings window can switch between Modern and Classic camera mode in real time, reset the camera location, show the changelog, and open Advanced Settings for redraw aggression and diagnostics logging.
 
 ## Debug Logging
 
