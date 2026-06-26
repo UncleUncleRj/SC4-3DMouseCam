@@ -8,6 +8,12 @@ extern "C" IMAGE_DOS_HEADER __ImageBase;
 
 namespace
 {
+	constexpr const wchar_t* kPluginDataDirectory = L"SC4-ModernCamera";
+	constexpr const wchar_t* kLegacyPluginDataDirectory = L"SC4-3DMouseCam";
+	constexpr const wchar_t* kSettingsFileName = L"SC4-ModernCamera.json";
+	constexpr const wchar_t* kLogFileName = L"SC4-ModernCamera.log";
+	constexpr const wchar_t* kPreviousLogFileName = L"SC4-ModernCamera.last";
+
 	std::filesystem::path ResolvePluginDirectory()
 	{
 		std::wstring modulePath(512, L'\0');
@@ -34,45 +40,61 @@ namespace
 		}
 	}
 
+	void MoveFileIfMissing(
+		const std::filesystem::path& source,
+		const std::filesystem::path& destination)
+	{
+		if (!std::filesystem::exists(source) || std::filesystem::exists(destination))
+		{
+			return;
+		}
+
+		std::error_code error;
+		std::filesystem::rename(source, destination, error);
+		if (!error)
+		{
+			return;
+		}
+
+		error.clear();
+		std::filesystem::copy_file(source, destination, std::filesystem::copy_options::none, error);
+		if (!error)
+		{
+			std::filesystem::remove(source, error);
+		}
+	}
+
 	std::filesystem::path ResolveDataDirectory()
 	{
 		const std::filesystem::path pluginDirectory = ResolvePluginDirectory();
-		const std::filesystem::path dataDirectory = pluginDirectory / L"SC4-3DMouseCam";
+		const std::filesystem::path dataDirectory = pluginDirectory / kPluginDataDirectory;
+		const std::filesystem::path legacyDataDirectory = pluginDirectory / kLegacyPluginDataDirectory;
 		std::error_code error;
+		if (!std::filesystem::exists(dataDirectory) && std::filesystem::is_directory(legacyDataDirectory))
+		{
+			std::filesystem::rename(legacyDataDirectory, dataDirectory, error);
+			error.clear();
+		}
+
 		std::filesystem::create_directories(dataDirectory, error);
 		if (error && !std::filesystem::is_directory(dataDirectory))
 		{
-			throw std::runtime_error("Failed to create the SC4-3DMouseCam data directory.");
+			throw std::runtime_error("Failed to create the SC4-ModernCamera data directory.");
 		}
 
-		// Migrate the files created by pre-0.7 development builds. This runs
-		// before the logger and settings file are opened.
-		constexpr const wchar_t* legacyFiles[] = {
-			L"SC4-3DMouseCam.json",
-			L"SC4-3DMouseCam.log",
-			L"SC4-3DMouseCam.last",
-			L"test.json",
-		};
-		for (const wchar_t* fileName : legacyFiles)
-		{
-			const std::filesystem::path source = pluginDirectory / fileName;
-			const std::filesystem::path destination = dataDirectory / fileName;
-			if (std::filesystem::exists(source) && !std::filesystem::exists(destination))
-			{
-				error.clear();
-				std::filesystem::rename(source, destination, error);
-				if (error)
-				{
-					error.clear();
-					std::filesystem::copy_file(
-						source, destination, std::filesystem::copy_options::none, error);
-					if (!error)
-					{
-						std::filesystem::remove(source, error);
-					}
-				}
-			}
-		}
+		MoveFileIfMissing(pluginDirectory / L"SC4-3DMouseCam.json", dataDirectory / kSettingsFileName);
+		MoveFileIfMissing(pluginDirectory / L"SC4-3DMouseCam.log", dataDirectory / kLogFileName);
+		MoveFileIfMissing(pluginDirectory / L"SC4-3DMouseCam.last", dataDirectory / kPreviousLogFileName);
+		MoveFileIfMissing(pluginDirectory / L"test.json", dataDirectory / L"test.json");
+
+		MoveFileIfMissing(dataDirectory / L"SC4-3DMouseCam.json", dataDirectory / kSettingsFileName);
+		MoveFileIfMissing(dataDirectory / L"SC4-3DMouseCam.log", dataDirectory / kLogFileName);
+		MoveFileIfMissing(dataDirectory / L"SC4-3DMouseCam.last", dataDirectory / kPreviousLogFileName);
+		MoveFileIfMissing(legacyDataDirectory / L"SC4-3DMouseCam.json", dataDirectory / kSettingsFileName);
+		MoveFileIfMissing(legacyDataDirectory / L"SC4-3DMouseCam.log", dataDirectory / kLogFileName);
+		MoveFileIfMissing(legacyDataDirectory / L"SC4-3DMouseCam.last", dataDirectory / kPreviousLogFileName);
+		MoveFileIfMissing(legacyDataDirectory / L"test.json", dataDirectory / L"test.json");
+
 		return dataDirectory;
 	}
 }
@@ -91,12 +113,12 @@ const std::filesystem::path& PluginPaths::GetDataDirectory()
 
 std::filesystem::path PluginPaths::GetSettingsPath()
 {
-	return GetDataDirectory() / L"SC4-3DMouseCam.json";
+	return GetDataDirectory() / kSettingsFileName;
 }
 
 std::filesystem::path PluginPaths::GetLogPath()
 {
-	return GetDataDirectory() / L"SC4-3DMouseCam.log";
+	return GetDataDirectory() / kLogFileName;
 }
 
 std::filesystem::path PluginPaths::GetTestSettingsPath()

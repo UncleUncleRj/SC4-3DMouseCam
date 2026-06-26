@@ -993,7 +993,7 @@ bool SC4CameraController::DumpCameraInfo(const char* reason) const
 bool SC4CameraController::ShowCameraDumpConfirmation() const
 {
 	return WithView3D([](cISC4View3DWin* view3D) {
-		static cRZBaseString title("SC4-3DMouseCam");
+		static cRZBaseString title("SC4-ModernCamera");
 		static cRZBaseString body("Camera info dumped to log");
 
 		return view3D->SetCursorText(

@@ -1,6 +1,6 @@
 # Settings Window Workflow
 
-This document records the current production behavior of the SC4-3DMouseCam settings UI. It is meant as a quick reference for future settings-window, input, redraw, and diagnostics work.
+This document records the current production behavior of the SC4-ModernCamera settings UI. It is meant as a quick reference for future settings-window, input, redraw, and diagnostics work.
 
 ## Window Structure
 
@@ -103,4 +103,4 @@ If this regresses, inspect `SC4WindowManager::ScheduleDeferredWindowOpen`, `SC4W
 
 The changelog popup is the same baked Welcome/Greeting window resource used for the first-install/version notice. Its changelog body is generated from `docs/changelog.md`; camera-settings guidance and the `View Controls` affordance live outside that scrollable changelog body.
 
-The body uses a read-only multiline `GZWinTextEdit` with `vscrollbar=yes` so changelog text can grow without increasing the window size. Visual Studio regenerates `Dev/ui/SC4-3DMouseCam.dat` from `tools/build_sc4_ui_dat.py` during the project pre-build event; manual DAT edits should be avoided.
+The body uses a read-only multiline `GZWinTextEdit` with `vscrollbar=yes` so changelog text can grow without increasing the window size. Visual Studio regenerates `Dev/ui/SC4-ModernCamera.dat` from `tools/build_sc4_ui_dat.py` during the project pre-build event; manual DAT edits should be avoided.

@@ -1,7 +1,7 @@
 # Camera Zoom and Rotation Design
 
 This document defines the intended camera behavior for GitHub issue
-[#4](https://github.com/UncleUncleRj/SC4-3DMouseCam/issues/4). It incorporates
+[#4](https://github.com/UncleUncleRj/SC4-ModernCamera/issues/4). It incorporates
 the original camera concept, play testing in SC4, and comparison testing with
 other city-building camera systems.
 

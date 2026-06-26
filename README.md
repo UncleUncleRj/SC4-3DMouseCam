@@ -1,6 +1,6 @@
-# SC4-3DMouseCam
+# SC4-ModernCamera
 
-SC4-3DMouseCam is a DLL plugin for SimCity 4 Deluxe Edition. It completely changes the SC4 Camera into a more modern City Builder style Mouse-Controlled camera.
+SC4-ModernCamera is a DLL plugin for SimCity 4 Deluxe Edition. It completely changes the SC4 Camera into a more modern City Builder style Mouse-Controlled camera.
 
 This project is currently in BETA. Feel free to play with it, but __WARNING - backup your important cities and regions first!__
 
@@ -14,7 +14,7 @@ Older disc/retail builds are not supported, and at this time support is not plan
 ## Installation
 
 1. Download the release package from the releases page.
-2. Copy `SC4-3DMouseCam.dll` and `SC4-3DMouseCam.dat` to your SimCity 4 Plugins folder, usually:
+2. Copy `SC4-ModernCamera.dll` and `SC4-ModernCamera.dat` to your SimCity 4 Plugins folder, usually:
 
    ```text
    %USERPROFILE%\Documents\SimCity 4\Plugins\
@@ -29,16 +29,16 @@ Older disc/retail builds are not supported, and at this time support is not plan
 - **M3 + horizontal drag**: Rotates the camera.
 - **M3 + vertical drag**: Adjusts the camera pitch.
 - **Mouse wheel**: Smoothly zooms while preserving the current camera angle.
-- **F8**: Dumps the current camera and renderer state to `Plugins\SC4-3DMouseCam\SC4-3DMouseCam.log` for debugging.
+- **F8**: Dumps the current camera and renderer state to `Plugins\SC4-ModernCamera\SC4-ModernCamera.log` for debugging.
 
 Camera options are available in-game through the floating camera settings button in the upper-right corner of the screen. The settings window can switch between Modern and Classic camera mode in real time, reset the camera location, show the changelog, and open Advanced Settings for redraw aggression and diagnostics logging.
 
 ## Debug Logging
 
-The plugin writes debug logs to `Plugins\SC4-3DMouseCam\`:
+The plugin writes debug logs to `Plugins\SC4-ModernCamera\`:
 
-- `SC4-3DMouseCam.log`
-- `SC4-3DMouseCam.last`
+- `SC4-ModernCamera.log`
+- `SC4-ModernCamera.last`
 
 These files can be safely ignored or deleted.
 
@@ -51,7 +51,7 @@ These files can be safely ignored or deleted.
 
 ## Building
 
-Open `SC4-3DMouseCam.slnx` in Visual Studio and build the `Dev` project for `Win32`.
+Open `SC4-ModernCamera.slnx` in Visual Studio and build the `Dev` project for `Win32`.
 
 The project is configured as a DLL plugin and includes the required GZCOM source files and headers under `Dev/src` and `Dev/vendor/gzcom`.
 
