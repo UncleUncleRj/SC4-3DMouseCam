@@ -5,6 +5,7 @@ import re
 import struct
 import sys
 import time
+import zlib
 
 
 UI_SCRIPT_TYPE_ID = 0x00000000
@@ -128,35 +129,159 @@ def encode_dxt3_block(pixels: list[tuple[int, int, int, int]]) -> bytes:
     return alpha_bits.to_bytes(8, "little") + encode_dxt3_color_block(pixels)
 
 
-def encode_dxt3_rgba(image) -> bytes:
-    width, height = image.size
+def encode_dxt3_rgba(width: int, height: int, pixels: list[tuple[int, int, int, int]]) -> bytes:
     if width % 4 != 0 or height % 4 != 0:
         raise RuntimeError(f"DXT3 images must be multiples of 4 pixels, got {width}x{height}")
 
-    pixels = image.load()
     output = bytearray()
     for y in range(0, height, 4):
         for x in range(0, width, 4):
             block = []
             for row in range(4):
                 for col in range(4):
-                    block.append(pixels[x + col, y + row])
+                    block.append(pixels[(y + row) * width + x + col])
             output.extend(encode_dxt3_block(block))
     return bytes(output)
 
 
-def build_fsh_dxt3_from_png(png_path: Path, image_id: bytes = b"3DMCICON") -> bytes:
+def read_png_rgba(png_path: Path) -> tuple[int, int, list[tuple[int, int, int, int]]]:
+    data = png_path.read_bytes()
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise RuntimeError(f"{png_path} is not a PNG file")
+
+    offset = 8
+    width = 0
+    height = 0
+    bit_depth = 0
+    color_type = 0
+    interlace = 0
+    palette: list[tuple[int, int, int]] = []
+    transparency: bytes = b""
+    compressed = bytearray()
+
+    while offset < len(data):
+        if offset + 8 > len(data):
+            raise RuntimeError(f"Truncated PNG chunk header in {png_path}")
+        chunk_length = struct.unpack(">I", data[offset:offset + 4])[0]
+        chunk_type = data[offset + 4:offset + 8]
+        chunk_start = offset + 8
+        chunk_end = chunk_start + chunk_length
+        if chunk_end + 4 > len(data):
+            raise RuntimeError(f"Truncated PNG chunk {chunk_type!r} in {png_path}")
+        chunk_data = data[chunk_start:chunk_end]
+        offset = chunk_end + 4
+
+        if chunk_type == b"IHDR":
+            width, height, bit_depth, color_type, _compression, _filter, interlace = struct.unpack(
+                ">IIBBBBB", chunk_data
+            )
+        elif chunk_type == b"PLTE":
+            palette = [
+                tuple(chunk_data[index:index + 3])
+                for index in range(0, len(chunk_data), 3)
+            ]
+        elif chunk_type == b"tRNS":
+            transparency = chunk_data
+        elif chunk_type == b"IDAT":
+            compressed.extend(chunk_data)
+        elif chunk_type == b"IEND":
+            break
+
+    if width <= 0 or height <= 0:
+        raise RuntimeError(f"{png_path} is missing a valid IHDR")
+    if bit_depth != 8:
+        raise RuntimeError(f"{png_path} uses unsupported PNG bit depth {bit_depth}; expected 8")
+    if interlace != 0:
+        raise RuntimeError(f"{png_path} uses unsupported interlacing; expected non-interlaced PNG")
+
+    channels_by_type = {
+        0: 1,  # grayscale
+        2: 3,  # RGB
+        3: 1,  # palette index
+        4: 2,  # grayscale + alpha
+        6: 4,  # RGBA
+    }
+    if color_type not in channels_by_type:
+        raise RuntimeError(f"{png_path} uses unsupported PNG color type {color_type}")
+
+    channels = channels_by_type[color_type]
+    bytes_per_pixel = channels
+    stride = width * channels
+    raw = zlib.decompress(bytes(compressed))
+    expected = (stride + 1) * height
+    if len(raw) != expected:
+        raise RuntimeError(f"{png_path} has unexpected decompressed size {len(raw)}; expected {expected}")
+
+    rows: list[bytes] = []
+    raw_offset = 0
+    previous = bytearray(stride)
+    for _row in range(height):
+        filter_type = raw[raw_offset]
+        raw_offset += 1
+        scanline = bytearray(raw[raw_offset:raw_offset + stride])
+        raw_offset += stride
+
+        for index in range(stride):
+            left = scanline[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+            up = previous[index]
+            up_left = previous[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+
+            if filter_type == 1:
+                scanline[index] = (scanline[index] + left) & 0xFF
+            elif filter_type == 2:
+                scanline[index] = (scanline[index] + up) & 0xFF
+            elif filter_type == 3:
+                scanline[index] = (scanline[index] + ((left + up) // 2)) & 0xFF
+            elif filter_type == 4:
+                predictor = left + up - up_left
+                distance_left = abs(predictor - left)
+                distance_up = abs(predictor - up)
+                distance_up_left = abs(predictor - up_left)
+                if distance_left <= distance_up and distance_left <= distance_up_left:
+                    paeth = left
+                elif distance_up <= distance_up_left:
+                    paeth = up
+                else:
+                    paeth = up_left
+                scanline[index] = (scanline[index] + paeth) & 0xFF
+            elif filter_type != 0:
+                raise RuntimeError(f"{png_path} uses unsupported PNG filter {filter_type}")
+
+        rows.append(bytes(scanline))
+        previous = scanline
+
+    pixels: list[tuple[int, int, int, int]] = []
+    for row in rows:
+        for x in range(width):
+            index = x * channels
+            if color_type == 0:
+                gray = row[index]
+                pixels.append((gray, gray, gray, 255))
+            elif color_type == 2:
+                r, g, b = row[index:index + 3]
+                pixels.append((r, g, b, 255))
+            elif color_type == 3:
+                palette_index = row[index]
+                if palette_index >= len(palette):
+                    raise RuntimeError(f"{png_path} references missing palette index {palette_index}")
+                r, g, b = palette[palette_index]
+                a = transparency[palette_index] if palette_index < len(transparency) else 255
+                pixels.append((r, g, b, a))
+            elif color_type == 4:
+                gray, alpha = row[index:index + 2]
+                pixels.append((gray, gray, gray, alpha))
+            elif color_type == 6:
+                r, g, b, a = row[index:index + 4]
+                pixels.append((r, g, b, a))
+
+    return width, height, pixels
+
+
+def build_fsh_dxt3(width: int, height: int, pixels: list[tuple[int, int, int, int]], image_id: bytes) -> bytes:
     if len(image_id) != 8:
         raise RuntimeError("FSH image IDs must be exactly 8 bytes")
 
-    try:
-        from PIL import Image
-    except ImportError as exc:
-        raise RuntimeError("Pillow is required to package PNG UI images") from exc
-
-    image = Image.open(png_path).convert("RGBA")
-    width, height = image.size
-    payload = encode_dxt3_rgba(image)
+    payload = encode_dxt3_rgba(width, height, pixels)
 
     # Minimal one-image SHPI/FSH payload. Format 0x61 was verified against a
     # Reader-exported decoded FSH sample as DXT3.
@@ -178,27 +303,19 @@ def build_fsh_dxt3_from_png(png_path: Path, image_id: bytes = b"3DMCICON") -> by
     return bytes(header)
 
 
+def build_fsh_dxt3_from_png(png_path: Path, image_id: bytes = b"3DMCICON") -> bytes:
+    width, height, pixels = read_png_rgba(png_path)
+    return build_fsh_dxt3(width, height, pixels, image_id)
+
+
 def build_button_strip_fsh_from_png(png_path: Path, image_id: bytes) -> bytes:
-    try:
-        from PIL import Image
-    except ImportError as exc:
-        raise RuntimeError("Pillow is required to package PNG UI images") from exc
-
-    source = Image.open(png_path).convert("RGBA")
-    width, height = source.size
-    strip = Image.new("RGBA", (width * 4, height), (0, 0, 0, 0))
-    for index in range(4):
-        strip.paste(source, (width * index, 0))
-
-    temporary_path = png_path.with_suffix(".button-strip.tmp.png")
-    try:
-        strip.save(temporary_path)
-        return build_fsh_dxt3_from_png(temporary_path, image_id)
-    finally:
-        try:
-            temporary_path.unlink()
-        except FileNotFoundError:
-            pass
+    width, height, pixels = read_png_rgba(png_path)
+    strip_width = width * 4
+    strip_pixels: list[tuple[int, int, int, int]] = []
+    for row in range(height):
+        source_row = pixels[row * width:(row + 1) * width]
+        strip_pixels.extend(source_row * 4)
+    return build_fsh_dxt3(strip_width, height, strip_pixels, image_id)
 
 
 def escape_ui_caption(text: str) -> str:

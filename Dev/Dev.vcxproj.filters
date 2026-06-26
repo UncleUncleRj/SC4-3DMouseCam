@@ -40,7 +40,28 @@
     <None Include="ui\3dm-menu-icon.png">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="ui\camera_point.png">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="ui\camicon.png">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="ui\menu-button-stages.png">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="ui\SC4-3DMouseCam-BasicUI.txt">
+      <Filter>Resource Files</Filter>
+    </None>
     <None Include="ui\SC4-3DMouseCam.dat">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="ui\SC4-3DMouseCam-TestUI.txt">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\docs\changelog.md">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\tools\build_sc4_ui_dat.py">
       <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>

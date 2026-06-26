@@ -9,7 +9,7 @@ The test window is a native SimCity 4 UI window. It does not use ImGui and does 
 - `Dev/ui/SC4-3DMouseCam-TestUI.txt` contains the readable legacy UI script.
 - `tools/build_sc4_ui_dat.py` packages that script into an uncompressed DBPF file.
 - `Dev/ui/SC4-3DMouseCam.dat` is the generated companion resource.
-- The Visual Studio post-build step copies the DAT beside the plugin DLL.
+- The Visual Studio pre-build step regenerates the DAT, and the post-build step copies it beside the plugin DLL.
 - `Dev/src/SC4WindowManager.cpp` owns plugin windows, notification dialogs, the floating settings button, the production Settings window, the Advanced Settings child window, and the control laboratory.
 - `docs/changelog.md` is baked into the first-install greeting window by the DAT builder. The greeting version is read from `Dev/src/PluginVersion.h`, not from the changelog text.
 
@@ -65,7 +65,7 @@ Important caveat: runtime customization is not yet as reliable as baked script l
 
 ## Resource and build behavior
 
-The UI DAT is a required runtime resource, unlike the user settings JSON files. The JSON files are created by the plugin as needed and must not be copied by the build.
+The UI DAT is a required runtime resource, unlike the user settings JSON files. Visual Studio regenerates it with `tools/build_sc4_ui_dat.py` during the project pre-build event, then copies it to the Plugins folder during post-build. The DAT builder uses only Python's standard library so the build does not require Pillow or other Python packages. The JSON files are created by the plugin as needed and must not be copied by the build.
 
 The DBPF writer currently emits:
 

@@ -52,7 +52,9 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="PropertySheet.props" />
   </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Label="UserMacros">
+    <PythonExe Condition="'$(PythonExe)'==''">py -3</PythonExe>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <IncludePath>$(ProjectDir)vendor\gzcom;$(IncludePath)</IncludePath>
     <TargetName>SC4-3DMouseCam</TargetName>
@@ -79,6 +81,10 @@
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
+    <PreBuildEvent>
+      <Command>$(PythonExe) "$(ProjectDir)..\tools\build_sc4_ui_dat.py" "$(ProjectDir)ui\SC4-3DMouseCam-TestUI.txt" "$(ProjectDir)ui\SC4-3DMouseCam.dat"</Command>
+      <Message>Generating native UI DAT...</Message>
+    </PreBuildEvent>
     <PostBuildEvent>
       <Command>xcopy "$(TargetPath)" "$(PLUGINS_FOLDER)" /Y /I
 xcopy "$(ProjectDir)ui\SC4-3DMouseCam.dat" "$(PLUGINS_FOLDER)" /Y /I
@@ -108,6 +114,10 @@ if exist "$(PLUGINS_FOLDER)\SC4-3DMouseCam-TestUI.dat" del /Q "$(PLUGINS_FOLDER)
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
+    <PreBuildEvent>
+      <Command>$(PythonExe) "$(ProjectDir)..\tools\build_sc4_ui_dat.py" "$(ProjectDir)ui\SC4-3DMouseCam-TestUI.txt" "$(ProjectDir)ui\SC4-3DMouseCam.dat"</Command>
+      <Message>Generating native UI DAT...</Message>
+    </PreBuildEvent>
     <PostBuildEvent>
       <Command>xcopy "$(TargetPath)" "$(PLUGINS_FOLDER)" /Y /I
 xcopy "$(ProjectDir)ui\SC4-3DMouseCam.dat" "$(PLUGINS_FOLDER)" /Y /I
@@ -134,9 +144,14 @@ if exist "$(PLUGINS_FOLDER)\SC4-3DMouseCam-TestUI.dat" del /Q "$(PLUGINS_FOLDER)
   </ItemGroup>
   <ItemGroup>
     <None Include="ui\3dm-menu-icon.png" />
+    <None Include="ui\camera_point.png" />
+    <None Include="ui\camicon.png" />
+    <None Include="ui\menu-button-stages.png" />
     <None Include="ui\SC4-3DMouseCam-BasicUI.txt" />
     <None Include="ui\SC4-3DMouseCam.dat" />
     <None Include="ui\SC4-3DMouseCam-TestUI.txt" />
+    <None Include="..\docs\changelog.md" />
+    <None Include="..\tools\build_sc4_ui_dat.py" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
