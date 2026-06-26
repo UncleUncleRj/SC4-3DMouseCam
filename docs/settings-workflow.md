@@ -95,6 +95,12 @@ The stable flow is:
 4. The manager sends the settings window behind the child.
 5. The manager pulls the child to front.
 
-Advanced Settings has one extra hardening step: destroy and recreate the Advanced window when explicitly opened. Reusing an existing native child window can inherit stale z-order after the user has changed settings, especially after switching to Classic and opening Advanced again.
+Advanced Settings and Show Changelog both have one extra hardening step: destroy and recreate the child window when explicitly opened. Reusing an existing native child can inherit stale z-order after the user has changed settings, especially after switching to Classic and reopening a child window.
 
-If this regresses, inspect `SC4WindowManager::ScheduleDeferredWindowOpen`, `SC4WindowManager::OnDeferredWindowOpenTimer`, and `SC4WindowManager::ShowAdvancedSettingsWindow` first.
+If this regresses, inspect `SC4WindowManager::ScheduleDeferredWindowOpen`, `SC4WindowManager::OnDeferredWindowOpenTimer`, `SC4WindowManager::ShowAdvancedSettingsWindow`, and the `DeferredWindowOpen::Changelog` case first.
+
+## Changelog Window
+
+The changelog popup is the same baked Greeting window resource used for the first-install/version notice. Its body is generated from `docs/changelog.md`.
+
+The body uses a read-only multiline `GZWinTextEdit` with `vscrollbar=yes` so changelog text can grow without increasing the window size. Changelog text changes require regenerating `Dev/ui/SC4-3DMouseCam.dat` with `tools/build_sc4_ui_dat.py`.

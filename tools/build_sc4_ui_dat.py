@@ -16,6 +16,7 @@ GREETING_INSTANCE_ID = 0x3D0C0705
 CONTROLS_INSTANCE_ID = 0x3D0C0707
 MENU_ICON_INSTANCE_ID = 0x3D0C0900
 CHOICE_BUTTON_IMAGE_INSTANCE_ID = 0x3D0C0907
+CAM_ICON_INSTANCE_ID = 0x3D0C0908
 MENU_BUTTON_INSTANCE_ID = 0x3D0C0901
 SETTINGS_INSTANCE_ID = 0x3D0C0903
 DIAGNOSTICS_INSTANCE_ID = 0x3D0C0905
@@ -144,6 +145,29 @@ def build_fsh_dxt3_from_png(png_path: Path, image_id: bytes = b"3DMCICON") -> by
     return bytes(header)
 
 
+def build_button_strip_fsh_from_png(png_path: Path, image_id: bytes) -> bytes:
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise RuntimeError("Pillow is required to package PNG UI images") from exc
+
+    source = Image.open(png_path).convert("RGBA")
+    width, height = source.size
+    strip = Image.new("RGBA", (width * 4, height), (0, 0, 0, 0))
+    for index in range(4):
+        strip.paste(source, (width * index, 0))
+
+    temporary_path = png_path.with_suffix(".button-strip.tmp.png")
+    try:
+        strip.save(temporary_path)
+        return build_fsh_dxt3_from_png(temporary_path, image_id)
+    finally:
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def escape_ui_caption(text: str) -> str:
     return (
         text.replace('"', "'")
@@ -175,17 +199,20 @@ def read_plugin_version(version_header: Path) -> str:
 def build_greeting_script(changelog_path: Path, version_header: Path) -> bytes:
     version = read_plugin_version(version_header)
     changelog_body = changelog_path.read_text(encoding="utf-8").strip()
-    changelog = escape_ui_caption(
+    changelog_text = (
         f"SC4-3DMouseCam v{version} installed!\n\n"
         "Camera Options are available from the camera settings button in the upper right of the screen.\n\n"
         f"{changelog_body}"
     )
+    changelog = escape_ui_caption(changelog_text)
+    changelog_max_text = max(4096, len(changelog_text) + 512)
     script = f"""# Generated for SC4-3DMouseCam's first-install greeting window
 <LEGACY clsid=GZWinGen iid=IGZWinGen id=0x3D0C0706 area=(0,0,520,320) fillcolor=(228,231,238) caption="SC4-3DMouseCam Greeting" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=yes winflag_mousetrans=no winflag_ignoremouse=no image={{46a006b0,6bb93cb5}} blttype=edge userdata=0 moveable=yes sizeable=no defaultkeys=no closevisible=no gobackvisible=no minmaxvisible=no closedisabled=no gobackdisabled=no minmaxdisabled=no titlebar=no fill=yes outline=no paint=yes sidebar=no gutters=(4,4) winflag_enable=no alphablend=no >
 <CHILDREN>
    <LEGACY clsid=GZWinBtn iid=IGZWinBtn id=0x3D0C0840 area=(490,10,512,30) fillcolor=(204,204,204) caption="" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=yes winflag_pbufftrans=no winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=yes winflag_mousetrans=no winflag_ignoremouse=no image={{46a006b0,144161f9}} font=GenButton colorfontnormal=(63,73,103) colorfontdisabled=(102,102,102) colorfonthilited=(63,73,103) toggle=off triggerondown=off showcaption=no fill=yes autosize=no wrapcaption=no shiftcaption=no tips=yes tipsdelay=no tipstimeout=no style=standard gutters=(0,0,0,0) tiptext="Close" tipoffsets=(0,0) tipflag=0x01000000 align=center btnclicksnd={{00000000,ca5c3239}} >
-   <LEGACY clsid=GZWinText iid=IGZWinText id=0x3D0C0841 area=(20,4,478,30) fillcolor=(0,0,0) caption="SC4-3DMouseCam" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=no winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes font=GenHeader align=leftcenter notify=no wrapped=no opaque=no forecolor=(32,40,80) bkgcolor=(0,0,0) gutters=(2,2) >
-   <LEGACY clsid=GZWinText iid=IGZWinText id=0x3D0C0842 area=(24,62,496,246) fillcolor=(0,0,0) caption="{changelog}" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=no winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes font=GenBodyMedium align=lefttop notify=no wrapped=yes opaque=no forecolor=(32,40,80) bkgcolor=(0,0,0) gutters=(2,2) >
+   <LEGACY clsid=GZWinBtn iid=IGZWinBtn id=0x3D0C0845 area=(18,2,50,34) fillcolor=(0,0,0) caption="" winflag_visible=yes winflag_enabled=yes winflag_moveable=no winflag_sizeable=no winflag_sortable=no winflag_pbuff=yes winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes image={{3d0c0700,3d0c0908}} font=GenButton colorfontnormal=(63,73,103) colorfontdisabled=(102,102,102) colorfonthilited=(63,73,103) toggle=off triggerondown=off showcaption=no fill=yes autosize=no wrapcaption=no shiftcaption=no tips=no tipsdelay=no tipstimeout=no style=standard gutters=(0,0,0,0) tiptext="" tipoffsets=(0,0) tipflag=0x01000000 align=center btnclicksnd={{00000000,ca5c3239}} >
+   <LEGACY clsid=GZWinText iid=IGZWinText id=0x3D0C0841 area=(58,4,478,30) fillcolor=(0,0,0) caption="Welcome!" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=no winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes font=GenHeader align=leftcenter notify=no wrapped=no opaque=no forecolor=(32,40,80) bkgcolor=(0,0,0) gutters=(2,2) >
+   <LEGACY clsid=GZWinTextEdit iid=IGZWinTextEdit id=0x3D0C0842 area=(24,48,496,246) fillcolor=(242,244,248) caption="{changelog}" transparent winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=yes winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_mousetrans=no winflag_ignoremouse=no editable=no wrapped=yes hscrollbar=no vscrollbar=yes outline=yes opaque=yes caretvisible=no allowinsert=no allowundo=no singleline=no initvalue="{changelog}" colorfontnormal=(32,40,80) colorfontdisabled=(32,40,80) colorfonthilited=(255,255,255) colorfontnormalbkg=(242,244,248) colorfontdisabledbkg=(242,244,248) colorfonthilitedbkg=(0,0,128) caretcolor=(32,40,80) highlightcolor=(0,0,128) outlinecolor=(112,124,152) maxtext={changelog_max_text} gutters=(5,4) overwrite=no insertindex=0 insertpos=(0,0) caretperiod=1000 maxundo=0 >
    <LEGACY clsid=GZWinBtn iid=IGZWinBtn id=0x3D0C0844 area=(24,274,184,302) fillcolor=(204,204,204) caption="View Controls" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=yes winflag_pbufftrans=no winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=yes winflag_mousetrans=no winflag_ignoremouse=no image={{46a006b0,144161eb}} font=GenButton colorfontnormal=(63,73,103) colorfontdisabled=(102,102,102) colorfonthilited=(63,73,103) toggle=off triggerondown=off showcaption=yes fill=yes autosize=no wrapcaption=no shiftcaption=yes tips=no tipsdelay=no tipstimeout=no style=standard gutters=(0,0,0,0) tiptext="" tipoffsets=(0,0) tipflag=0x01000000 align=center btnclicksnd={{ca47efd9,4a5c31d7}} >
    <LEGACY clsid=GZWinBtn iid=IGZWinBtn id=0x3D0C0843 area=(340,274,500,302) fillcolor=(204,204,204) caption="OK" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=yes winflag_pbufftrans=no winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=yes winflag_mousetrans=no winflag_ignoremouse=no image={{46a006b0,144161eb}} font=GenButton colorfontnormal=(63,73,103) colorfontdisabled=(102,102,102) colorfonthilited=(63,73,103) toggle=off triggerondown=off showcaption=yes fill=yes autosize=no wrapcaption=no shiftcaption=yes tips=no tipsdelay=no tipstimeout=no style=standard gutters=(0,0,0,0) tiptext="" tipoffsets=(0,0) tipflag=0x01000000 align=center btnclicksnd={{ca47efd9,4a5c31d7}} >
 </CHILDREN>
@@ -230,7 +257,8 @@ def build_settings_script_legacy() -> bytes:
 <LEGACY clsid=GZWinGen iid=IGZWinGen id=0x3D0C0904 area=(0,0,520,480) fillcolor=(228,231,238) caption="SC4-3DMouseCam Settings" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=yes winflag_mousetrans=no winflag_ignoremouse=no image={46a006b0,6bb93cb5} blttype=edge userdata=0 moveable=yes sizeable=no defaultkeys=no closevisible=no gobackvisible=no minmaxvisible=no closedisabled=no gobackdisabled=no minmaxdisabled=no titlebar=no fill=yes outline=no paint=yes sidebar=no gutters=(4,4) winflag_enable=no alphablend=no >
 <CHILDREN>
    <LEGACY clsid=GZWinBtn iid=IGZWinBtn id=0x3D0C0920 area=(490,10,512,30) fillcolor=(204,204,204) caption="" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=yes winflag_pbufftrans=no winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=yes winflag_mousetrans=no winflag_ignoremouse=no image={46a006b0,144161f9} font=GenButton colorfontnormal=(63,73,103) colorfontdisabled=(102,102,102) colorfonthilited=(63,73,103) toggle=off triggerondown=off showcaption=no fill=yes autosize=no wrapcaption=no shiftcaption=no tips=yes tipsdelay=no tipstimeout=no style=standard gutters=(0,0,0,0) tiptext="Close" tipoffsets=(0,0) tipflag=0x01000000 align=center btnclicksnd={00000000,ca5c3239} >
-   <LEGACY clsid=GZWinText iid=IGZWinText id=0x3D0C0921 area=(20,4,478,30) fillcolor=(0,0,0) caption="SC4-3DMouseCam Settings" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=no winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes font=GenHeader align=leftcenter notify=no wrapped=no opaque=no forecolor=(32,40,80) bkgcolor=(0,0,0) gutters=(2,2) >
+   <LEGACY clsid=GZWinBtn iid=IGZWinBtn id=0x3D0C092D area=(18,2,50,34) fillcolor=(0,0,0) caption="" winflag_visible=yes winflag_enabled=yes winflag_moveable=no winflag_sizeable=no winflag_sortable=no winflag_pbuff=yes winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes image={3d0c0700,3d0c0908} font=GenButton colorfontnormal=(63,73,103) colorfontdisabled=(102,102,102) colorfonthilited=(63,73,103) toggle=off triggerondown=off showcaption=no fill=yes autosize=no wrapcaption=no shiftcaption=no tips=no tipsdelay=no tipstimeout=no style=standard gutters=(0,0,0,0) tiptext="" tipoffsets=(0,0) tipflag=0x01000000 align=center btnclicksnd={00000000,ca5c3239} >
+   <LEGACY clsid=GZWinText iid=IGZWinText id=0x3D0C0921 area=(58,4,478,30) fillcolor=(0,0,0) caption="SC4-3DMouseCam Settings" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=no winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes font=GenHeader align=leftcenter notify=no wrapped=no opaque=no forecolor=(32,40,80) bkgcolor=(0,0,0) gutters=(2,2) >
    <LEGACY clsid=GZWinText iid=IGZWinText id=0x3D0C0922 area=(24,48,496,70) fillcolor=(0,0,0) caption="Camera" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=no winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes font=GenHeader align=lefttop notify=no wrapped=no opaque=no forecolor=(32,40,80) bkgcolor=(0,0,0) gutters=(2,2) >
    <LEGACY clsid=GZWinText iid=IGZWinText id=0x3D0C0923 area=(36,82,210,104) fillcolor=(0,0,0) caption="Camera mode:" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=no winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes font=GenBodyMedium align=leftcenter notify=no wrapped=no opaque=no forecolor=(32,40,80) bkgcolor=(0,0,0) gutters=(2,2) >
    <LEGACY clsid=GZWinBtn iid=IGZWinBtn id=0x3D0C0930 area=(220,78,340,106) fillcolor=(204,204,204) caption="Modern" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=yes winflag_pbufftrans=no winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=yes winflag_mousetrans=no winflag_ignoremouse=no image={46a006b0,144161eb} font=GenButton colorfontnormal=(63,73,103) colorfontdisabled=(102,102,102) colorfonthilited=(63,73,103) toggle=on triggerondown=off showcaption=yes fill=yes autosize=no wrapcaption=no shiftcaption=yes tips=no tipsdelay=no tipstimeout=no style=toggle gutters=(0,0,0,0) tiptext="" tipoffsets=(0,0) tipflag=0x01000000 align=center btnclicksnd={ca47efd9,4a5c31d7} >
@@ -289,7 +317,8 @@ def build_settings_script() -> bytes:
 <LEGACY clsid=GZWinGen iid=IGZWinGen id=0x3D0C0904 area=(0,0,520,480) fillcolor=(228,231,238) caption="SC4-3DMouseCam Settings" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=yes winflag_mousetrans=no winflag_ignoremouse=no image={46a006b0,6bb93cb5} blttype=edge userdata=0 moveable=yes sizeable=no defaultkeys=no closevisible=no gobackvisible=no minmaxvisible=no closedisabled=no gobackdisabled=no minmaxdisabled=no titlebar=no fill=yes outline=no paint=yes sidebar=no gutters=(4,4) winflag_enable=no alphablend=no >
 <CHILDREN>
    <LEGACY clsid=GZWinBtn iid=IGZWinBtn id=0x3D0C0920 area=(490,10,512,30) fillcolor=(204,204,204) caption="" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=yes winflag_pbufftrans=no winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=yes winflag_mousetrans=no winflag_ignoremouse=no image={46a006b0,144161f9} font=GenButton colorfontnormal=(63,73,103) colorfontdisabled=(102,102,102) colorfonthilited=(63,73,103) toggle=off triggerondown=off showcaption=no fill=yes autosize=no wrapcaption=no shiftcaption=no tips=yes tipsdelay=no tipstimeout=no style=standard gutters=(0,0,0,0) tiptext="Close" tipoffsets=(0,0) tipflag=0x01000000 align=center btnclicksnd={00000000,ca5c3239} >
-   <LEGACY clsid=GZWinText iid=IGZWinText id=0x3D0C0921 area=(20,4,478,30) fillcolor=(0,0,0) caption="SC4-3DMouseCam Settings" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=no winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes font=GenHeader align=leftcenter notify=no wrapped=no opaque=no forecolor=(32,40,80) bkgcolor=(0,0,0) gutters=(2,2) >
+   <LEGACY clsid=GZWinBtn iid=IGZWinBtn id=0x3D0C092D area=(18,2,50,34) fillcolor=(0,0,0) caption="" winflag_visible=yes winflag_enabled=yes winflag_moveable=no winflag_sizeable=no winflag_sortable=no winflag_pbuff=yes winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes image={3d0c0700,3d0c0908} font=GenButton colorfontnormal=(63,73,103) colorfontdisabled=(102,102,102) colorfonthilited=(63,73,103) toggle=off triggerondown=off showcaption=no fill=yes autosize=no wrapcaption=no shiftcaption=no tips=no tipsdelay=no tipstimeout=no style=standard gutters=(0,0,0,0) tiptext="" tipoffsets=(0,0) tipflag=0x01000000 align=center btnclicksnd={00000000,ca5c3239} >
+   <LEGACY clsid=GZWinText iid=IGZWinText id=0x3D0C0921 area=(58,4,478,30) fillcolor=(0,0,0) caption="SC4-3DMouseCam Settings" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=no winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes font=GenHeader align=leftcenter notify=no wrapped=no opaque=no forecolor=(32,40,80) bkgcolor=(0,0,0) gutters=(2,2) >
    <LEGACY clsid=GZWinText iid=IGZWinText id=0x3D0C0922 area=(24,48,496,70) fillcolor=(0,0,0) caption="Camera" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=no winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes font=GenHeader align=lefttop notify=no wrapped=no opaque=no forecolor=(32,40,80) bkgcolor=(0,0,0) gutters=(2,2) >
    <LEGACY clsid=GZWinText iid=IGZWinText id=0x3D0C0923 area=(36,82,210,104) fillcolor=(0,0,0) caption="Camera mode:" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=no winflag_acceptfocus=no winflag_mousetrans=yes winflag_ignoremouse=yes font=GenBodyMedium align=leftcenter notify=no wrapped=no opaque=no forecolor=(32,40,80) bkgcolor=(0,0,0) gutters=(2,2) >
    <LEGACY clsid=GZWinBtn iid=IGZWinBtn id=0x3D0C0930 area=(220,78,340,106) fillcolor=(204,204,204) caption="Modern" winflag_visible=yes winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=yes winflag_pbufftrans=no winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=yes winflag_mousetrans=no winflag_ignoremouse=no image={46a006b0,144161eb} font=GenButton colorfontnormal=(63,73,103) colorfontdisabled=(102,102,102) colorfonthilited=(63,73,103) toggle=on triggerondown=off showcaption=yes fill=yes autosize=no wrapcaption=no shiftcaption=yes tips=no tipsdelay=no tipstimeout=no style=toggle gutters=(0,0,0,0) tiptext="" tipoffsets=(0,0) tipflag=0x01000000 align=center btnclicksnd={ca47efd9,4a5c31d7} >
@@ -412,6 +441,17 @@ def build(source: Path, destination: Path) -> None:
                 PLUGIN_GROUP_ID,
                 CHOICE_BUTTON_IMAGE_INSTANCE_ID,
                 build_fsh_dxt3_from_png(choice_button_source, b"3DMCBTNS"),
+            )
+        )
+
+    cam_icon_source = source.with_name("camicon.png")
+    if cam_icon_source.exists():
+        resources.append(
+            (
+                UI_IMAGE_TYPE_ID,
+                PLUGIN_GROUP_ID,
+                CAM_ICON_INSTANCE_ID,
+                build_button_strip_fsh_from_png(cam_icon_source, b"3DMCICN2"),
             )
         )
 

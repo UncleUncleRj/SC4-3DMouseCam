@@ -2452,9 +2452,11 @@ void SC4WindowManager::OnDeferredWindowOpenTimer()
 		ShowAdvancedSettingsWindow();
 		break;
 	case DeferredWindowOpen::Changelog:
+		greetingWindow.Destroy();
 		if (ShowGreetingWindow())
 		{
 			settingsWindow.SendToBack();
+			greetingWindow.BringToFront();
 			greetingWindow.BringToFront();
 		}
 		break;

@@ -385,13 +385,13 @@ Safe geometry queries used by the laboratory are `GetL`, `GetT`, `GetR`, and `Ge
 
 ## Lifecycle and input behavior
 
-The first-install/changelog popup is a baked native SC4 window generated from `docs/changelog.md`. It is displayed during the first city load for a newly installed plugin version. Controls are intentionally kept out of the changelog body; the greeting window has a `View Controls` button that opens a smaller baked controls popup.
+The first-install/changelog popup is a baked native SC4 window generated from `docs/changelog.md`. It is displayed during the first city load for a newly installed plugin version. Controls are intentionally kept out of the changelog body; the greeting window has a `View Controls` button that opens a smaller baked controls popup. The changelog body uses a read-only multiline `GZWinTextEdit` with `vscrollbar=yes`, not a plain `GZWinText`, so release notes can grow without increasing the popup size.
 
 Creating the managed greeting immediately during city-load notification caused a crash. Deferring it by a short Win32 timer, currently 3 seconds, allowed the city view and UI hierarchy to finish initializing before the plugin created its own window.
 
 Opening a plugin child window directly inside a settings-window button callback can leave the new child behind the settings window after SC4 finishes its own command handling. The stable pattern is to schedule the child open on a short timer, let the button callback return, then send the settings window back and call `PullToFront()` on the child. This is used for the Advanced Settings and Show Changelog buttons.
 
-Advanced Settings has an additional verified z-order guard: when the user explicitly opens it from Settings, destroy and recreate the Advanced window before showing it, then send Settings back and pull Advanced to the front. Reusing the existing Advanced native child can inherit stale z-order after the user changes settings, especially after switching to Classic and reopening Advanced. Do not "simplify" this back to ordinary reuse unless a replacement z-order rule has been verified in game.
+Advanced Settings and Show Changelog have an additional verified z-order guard: when the user explicitly opens the child from Settings, destroy and recreate that child before showing it, then send Settings back and pull the child to the front. Reusing an existing native child can inherit stale z-order after the user changes settings, especially after switching to Classic and reopening a child window. Do not "simplify" this back to ordinary reuse unless a replacement z-order rule has been verified in game.
 
 The control laboratory is created only after the UI services and city view are available. While it is visible, camera input is suppressed so clicks and drags intended for controls cannot move the city camera.
 
