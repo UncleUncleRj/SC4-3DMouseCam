@@ -1,14 +1,14 @@
 # SimCity 4 Native UI Research
 
-This document records the verified behavior, resource recipes, failures, and working conventions discovered while building the SC4-3DMouseCam native control laboratory. It is intended to prevent future work from repeating unsafe experiments and to provide a foundation for the production settings and diagnostics windows.
+This document records the verified behavior, resource recipes, failures, and working conventions discovered while building the SC4-ModernCamera native control laboratory. It is intended to prevent future work from repeating unsafe experiments and to provide a foundation for the production settings and diagnostics windows.
 
 ## Current architecture
 
 The test window is a native SimCity 4 UI window. It does not use ImGui and does not require an additional runtime DLL.
 
-- `Dev/ui/SC4-3DMouseCam-TestUI.txt` contains the readable legacy UI script.
+- `Dev/ui/SC4-ModernCamera-TestUI.txt` contains the readable legacy UI script.
 - `tools/build_sc4_ui_dat.py` packages that script into an uncompressed DBPF file.
-- `Dev/ui/SC4-3DMouseCam.dat` is the generated companion resource.
+- `Dev/ui/SC4-ModernCamera.dat` is the generated companion resource.
 - The Visual Studio pre-build step regenerates the DAT, and the post-build step copies it beside the plugin DLL.
 - `Dev/src/SC4WindowManager.cpp` owns plugin windows, notification dialogs, the floating settings button, the production Settings window, the Advanced Settings child window, and the control laboratory.
 - `docs/changelog.md` is baked into the first-install greeting window by the DAT builder. The greeting version is read from `Dev/src/PluginVersion.h`, not from the changelog text.
@@ -59,7 +59,7 @@ The parameterless form creates a blank 420-by-240 window with only the native X 
 
 The factory returns an `SC4WindowHandle`; zero (`InvalidSC4WindowHandle`) indicates failure. The manager retains ownership and accepts the handle in `CloseWindow`. Named templates are used for windows with specialized controls or behavior. The control laboratory, Settings window, Advanced Settings window, greeting, controls popup, and floating menu button all use dedicated baked resources rather than dynamic layout.
 
-Basic windows are instantiated from the generic `SC4-3DMouseCam-BasicUI.txt` resource packed into the companion DAT. Runtime customization uses captions, `SetSize`, and relative `GZWinMoveTo` anchoring; it does not use either unsafe `SetArea` overload.
+Basic windows are instantiated from the generic `SC4-ModernCamera-BasicUI.txt` resource packed into the companion DAT. Runtime customization uses captions, `SetSize`, and relative `GZWinMoveTo` anchoring; it does not use either unsafe `SetArea` overload.
 
 Important caveat: runtime customization is not yet as reliable as baked script layout. A dynamically populated basic window appeared as a blank shell or ignored runtime size/caption changes in-game. For user-facing windows that must work on first load, prefer a dedicated baked UI resource and follow the control-laboratory pattern: create from script, add to the SC4 parent, center using `rootWindow->GetW()`/`GetH()`, set the winproc, then show.
 
@@ -85,7 +85,7 @@ The packager currently emits these UI script resources in the same type/group:
 | `0x3D0C0903` | Camera settings window |
 | `0x3D0C0905` | Advanced Settings window |
 
-The same DAT also carries custom UI image resources for the floating menu icon, selected/disabled button states, title-bar camera icon, and welcome arrow art. The packager substitutes the verified ordinance-style checkbox recipe and bakes `docs/changelog.md` into the greeting resource. The greeting heading is generated as `SC4-3D MouseCam {PluginVersion::String} Installed!`, so the version number remains centralized in `Dev/src/PluginVersion.h`. Keeping these transformations in the build step allows readable source files to remain easy to edit while preserving the exact native bitmap and text configuration that SC4 expects.
+The same DAT also carries custom UI image resources for the floating menu icon, selected/disabled button states, title-bar camera icon, and welcome arrow art. The packager substitutes the verified ordinance-style checkbox recipe and bakes `docs/changelog.md` into the greeting resource. The greeting heading is generated as `SC4-ModernCamera {PluginVersion::String} Installed!`, so the version number remains centralized in `Dev/src/PluginVersion.h`. Keeping these transformations in the build step allows readable source files to remain easy to edit while preserving the exact native bitmap and text configuration that SC4 expects.
 
 The settings option buttons use the custom button-stage image resource `0x856DDBAC / 0x3D0C0700 / 0x3D0C0907`, generated from `Dev/ui/menu-button-stages.png`. The image strip order is Disabled, Normal, Selected, Hovered. The selected state uses the green `#25DC80` fill baked into the asset. Runtime calls to `cIGZWin::SetFillColor` and `SetFillColorRGB` caused a debug CRT ESP mismatch when opening the settings window, so selected-state coloring must be baked into button image resources instead of applied through those `cIGZWin` methods.
 
@@ -195,7 +195,7 @@ DXT3 data is 16 bytes per 4-by-4 pixel block. For 512 by 512:
 
 That exactly matches each sample block's payload size.
 
-For the plugin's proposed 44-by-44, four-state menu button strip (`3dm-menu-icon.png`, 176 by 44 RGBA), a DXT3 payload would be:
+For the plugin's proposed 44-by-44, four-state menu button strip (`moderncamera-menu-icon.png`, 176 by 44 RGBA), a DXT3 payload would be:
 
 ```text
 (176 / 4) * (44 / 4) * 16 = 7,744 bytes
@@ -213,7 +213,7 @@ A minimal uncompressed one-image FSH/SHPI payload for that strip is expected to 
 7792 bytes total
 ```
 
-The plugin's menu icon is now packaged by `tools/build_sc4_ui_dat.py` from `Dev/ui/3dm-menu-icon.png`. The generated DAT contains the icon as an uncompressed SHPI/FSH payload with this TGI:
+The plugin's menu icon is now packaged by `tools/build_sc4_ui_dat.py` from `Dev/ui/moderncamera-menu-icon.png`. The generated DAT contains the icon as an uncompressed SHPI/FSH payload with this TGI:
 
 ```text
 Type:  0x856DDBAC
@@ -227,7 +227,7 @@ The corresponding UI script reference is:
 image={3d0c0700,3d0c0900}
 ```
 
-The generated `Dev/ui/SC4-3DMouseCam.dat` should contain the UI script resources plus `0x856DDBAC / 0x3D0C0700 / 0x3D0C0900` with an `SHPI` payload. The FSH structure and DXT3 decoding are verified from Reader output, and the packager emits the expected resource shape. In-game loading of this custom UI image is still the next thing to verify.
+The generated `Dev/ui/SC4-ModernCamera.dat` should contain the UI script resources plus `0x856DDBAC / 0x3D0C0700 / 0x3D0C0900` with an `SHPI` payload. The FSH structure and DXT3 decoding are verified from Reader output, and the packager emits the expected resource shape. In-game loading of this custom UI image is still the next thing to verify.
 
 ## UI script coordinates
 
@@ -332,7 +332,7 @@ Buttons also emit additional state messages ending in F7, F8, and F9. These are 
 
 Only `DoWinProcMessage` should perform event handling. Forwarding both `DoWinMsg` and `DoWinProcMessage` created duplicate interaction records.
 
-Every laboratory interaction is written to the normal plugin log and serialized into `Plugins/SC4-3DMouseCam/test.json`.
+Every laboratory interaction is written to the normal plugin log and serialized into `Plugins/SC4-ModernCamera/test.json`.
 
 ## Scrollbar handling
 
@@ -410,11 +410,11 @@ The production settings workflow is documented in [settings-workflow.md](setting
 
 ## Persistence files
 
-Runtime files are located in the `SC4-3DMouseCam` subfolder beside the plugin DLL. The plugin discovers that location dynamically rather than assuming a Documents path:
+Runtime files are located in the `SC4-ModernCamera` subfolder beside the plugin DLL. The plugin discovers that location dynamically rather than assuming a Documents path:
 
-- `SC4-3DMouseCam.json`: persistent user settings and installed-version marker.
+- `SC4-ModernCamera.json`: persistent user settings and installed-version marker.
 - `test.json`: control-laboratory event/state output.
-- `SC4-3DMouseCam.log`: plugin log.
+- `SC4-ModernCamera.log`: plugin log.
 
 These files are generated at runtime and are not build artifacts. Existing root-level files from earlier development builds are migrated into the subfolder before the logger or settings system opens them. The DLL and companion UI DAT remain in the Plugins root.
 

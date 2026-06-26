@@ -57,11 +57,11 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <IncludePath>$(ProjectDir)vendor\gzcom;$(IncludePath)</IncludePath>
-    <TargetName>SC4-3DMouseCam</TargetName>
+    <TargetName>SC4-ModernCamera</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <IncludePath>$(ProjectDir)vendor\gzcom;$(IncludePath)</IncludePath>
-    <TargetName>SC4-3DMouseCam</TargetName>
+    <TargetName>SC4-ModernCamera</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -82,12 +82,15 @@
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
     <PreBuildEvent>
-      <Command>$(PythonExe) "$(ProjectDir)..\tools\build_sc4_ui_dat.py" "$(ProjectDir)ui\SC4-3DMouseCam-TestUI.txt" "$(ProjectDir)ui\SC4-3DMouseCam.dat"</Command>
+      <Command>$(PythonExe) "$(ProjectDir)..\tools\build_sc4_ui_dat.py" "$(ProjectDir)ui\SC4-ModernCamera-TestUI.txt" "$(ProjectDir)ui\SC4-ModernCamera.dat"</Command>
       <Message>Generating native UI DAT...</Message>
     </PreBuildEvent>
     <PostBuildEvent>
       <Command>xcopy "$(TargetPath)" "$(PLUGINS_FOLDER)" /Y /I
-xcopy "$(ProjectDir)ui\SC4-3DMouseCam.dat" "$(PLUGINS_FOLDER)" /Y /I
+xcopy "$(ProjectDir)ui\SC4-ModernCamera.dat" "$(PLUGINS_FOLDER)" /Y /I
+if exist "$(PLUGINS_FOLDER)\SC4-ModernCamera-TestUI.dat" del /Q "$(PLUGINS_FOLDER)\SC4-ModernCamera-TestUI.dat"
+if exist "$(PLUGINS_FOLDER)\SC4-3DMouseCam.dll" del /Q "$(PLUGINS_FOLDER)\SC4-3DMouseCam.dll"
+if exist "$(PLUGINS_FOLDER)\SC4-3DMouseCam.dat" del /Q "$(PLUGINS_FOLDER)\SC4-3DMouseCam.dat"
 if exist "$(PLUGINS_FOLDER)\SC4-3DMouseCam-TestUI.dat" del /Q "$(PLUGINS_FOLDER)\SC4-3DMouseCam-TestUI.dat"</Command>
       <Message>Copying DLL and native UI DAT to SC4 Plugins folder...</Message>
     </PostBuildEvent>
@@ -116,12 +119,15 @@ if exist "$(PLUGINS_FOLDER)\SC4-3DMouseCam-TestUI.dat" del /Q "$(PLUGINS_FOLDER)
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
     <PreBuildEvent>
-      <Command>$(PythonExe) "$(ProjectDir)..\tools\build_sc4_ui_dat.py" "$(ProjectDir)ui\SC4-3DMouseCam-TestUI.txt" "$(ProjectDir)ui\SC4-3DMouseCam.dat"</Command>
+      <Command>$(PythonExe) "$(ProjectDir)..\tools\build_sc4_ui_dat.py" "$(ProjectDir)ui\SC4-ModernCamera-TestUI.txt" "$(ProjectDir)ui\SC4-ModernCamera.dat"</Command>
       <Message>Generating native UI DAT...</Message>
     </PreBuildEvent>
     <PostBuildEvent>
       <Command>xcopy "$(TargetPath)" "$(PLUGINS_FOLDER)" /Y /I
-xcopy "$(ProjectDir)ui\SC4-3DMouseCam.dat" "$(PLUGINS_FOLDER)" /Y /I
+xcopy "$(ProjectDir)ui\SC4-ModernCamera.dat" "$(PLUGINS_FOLDER)" /Y /I
+if exist "$(PLUGINS_FOLDER)\SC4-ModernCamera-TestUI.dat" del /Q "$(PLUGINS_FOLDER)\SC4-ModernCamera-TestUI.dat"
+if exist "$(PLUGINS_FOLDER)\SC4-3DMouseCam.dll" del /Q "$(PLUGINS_FOLDER)\SC4-3DMouseCam.dll"
+if exist "$(PLUGINS_FOLDER)\SC4-3DMouseCam.dat" del /Q "$(PLUGINS_FOLDER)\SC4-3DMouseCam.dat"
 if exist "$(PLUGINS_FOLDER)\SC4-3DMouseCam-TestUI.dat" del /Q "$(PLUGINS_FOLDER)\SC4-3DMouseCam-TestUI.dat"</Command>
       <Message>Copying DLL and native UI DAT to SC4 Plugins folder...</Message>
     </PostBuildEvent>
@@ -144,13 +150,13 @@ if exist "$(PLUGINS_FOLDER)\SC4-3DMouseCam-TestUI.dat" del /Q "$(PLUGINS_FOLDER)
     <ClInclude Include="src\SC4WindowManager.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="ui\3dm-menu-icon.png" />
+    <None Include="ui\moderncamera-menu-icon.png" />
     <None Include="ui\camera_point.png" />
     <None Include="ui\camicon.png" />
     <None Include="ui\menu-button-stages.png" />
-    <None Include="ui\SC4-3DMouseCam-BasicUI.txt" />
-    <None Include="ui\SC4-3DMouseCam.dat" />
-    <None Include="ui\SC4-3DMouseCam-TestUI.txt" />
+    <None Include="ui\SC4-ModernCamera-BasicUI.txt" />
+    <None Include="ui\SC4-ModernCamera.dat" />
+    <None Include="ui\SC4-ModernCamera-TestUI.txt" />
     <None Include="..\docs\changelog.md" />
     <None Include="..\tools\build_sc4_ui_dat.py" />
   </ItemGroup>

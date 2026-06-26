@@ -862,10 +862,10 @@ LRESULT HandleCanvasMouseMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
     return 0;
 }
 
-class cSC4MouseCamDirector : public cRZMessage2COMDirector, public cIGZWinProcFilterW32
+class cSC4ModernCameraDirector : public cRZMessage2COMDirector, public cIGZWinProcFilterW32
 {
 public:
-    cSC4MouseCamDirector()
+    cSC4ModernCameraDirector()
         : mpCanvasW32(nullptr)
     {
         AddRef();
@@ -891,8 +891,8 @@ public:
             Logger::GetInstance().Initialize(PluginPaths::GetLogPath().string());
         }
         catch (const std::exception&) {
-            std::filesystem::create_directories("SC4-3DMouseCam");
-            Logger::GetInstance().Initialize("SC4-3DMouseCam/SC4-3DMouseCam.log");
+            std::filesystem::create_directories("SC4-ModernCamera");
+            Logger::GetInstance().Initialize("SC4-ModernCamera/SC4-ModernCamera.log");
         }
 
         Logger::GetInstance().WriteLine(
@@ -1021,6 +1021,6 @@ private:
 };
 
 cRZCOMDllDirector* RZGetCOMDllDirector() {
-    static cSC4MouseCamDirector sDirector;
+    static cSC4ModernCameraDirector sDirector;
     return &sDirector;
 }

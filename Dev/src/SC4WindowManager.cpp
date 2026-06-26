@@ -1717,7 +1717,7 @@ bool ControlLaboratoryWindow::Create()
 	{
 		Logger::GetInstance().WriteLine(
 			LogLevel::Error,
-			"Test UI: failed to load SC4-3DMouseCam.dat from the Plugins folder.");
+			"Test UI: failed to load SC4-ModernCamera.dat from the Plugins folder.");
 		parentWindow->Release();
 		parentWindow = nullptr;
 		return false;
@@ -1960,9 +1960,9 @@ bool ControlLaboratoryWindow::BuildControls()
 		}
 	};
 
-	addLabel(0x3D0C0720, "SC4-3DMouseCam Native UI Control Laboratory", 48, cIGZFont::Style_Bold);
+	addLabel(0x3D0C0720, "SC4-ModernCamera Native UI Control Laboratory", 48, cIGZFont::Style_Bold);
 	Logger::GetInstance().WriteLine(LogLevel::Info, "Test UI: label creation succeeded.");
-	addLabel(0x3D0C0721, "Each interaction is logged and written to Plugins/SC4-3DMouseCam/test.json.", 72);
+	addLabel(0x3D0C0721, "Each interaction is logged and written to Plugins/SC4-ModernCamera/test.json.", 72);
 	addLabel(0x3D0C0722, "BUTTON CONTROLS", 108, cIGZFont::Style_Bold);
 
 	cRZBaseString buttonText("Standard Button");
@@ -2353,9 +2353,9 @@ void SC4WindowManager::OnCityLoaded(PluginSettings& settings)
 			Logger::GetInstance().WriteLine(
 				LogLevel::Warning,
 				"Window Manager: failed to start the delayed version notice timer; falling back to the native version notice.");
-			const std::string title = std::string("SC4 3D Mouse Camera ") + PluginVersion::String;
+			const std::string title = std::string("SC4 Modern Camera ") + PluginVersion::String;
 			const std::string message =
-				std::string("SC4-3DMouseCam v") + PluginVersion::String + " installed!\n\n"
+				std::string("SC4-ModernCamera v") + PluginVersion::String + " installed!\n\n"
 				+ "Camera Options are available from the camera settings button in the upper right of the screen.\n\n"
 				+ "Controls:\n"
 				+ "WASD: Move Camera (optional)\n"
@@ -2367,7 +2367,7 @@ void SC4WindowManager::OnCityLoaded(PluginSettings& settings)
 				+ "- Added version-aware first-install notice.\n"
 				+ "- Added native SC4 window manager foundation.\n"
 				+ "- Added optional WASD camera movement support groundwork.\n"
-				+ "- Added plugin data folder: Plugins/SC4-3DMouseCam/.";
+				+ "- Added plugin data folder: Plugins/SC4-ModernCamera/.";
 			if (ShowNotification(title.c_str(), message.c_str()))
 			{
 				settings.AcknowledgeCurrentVersion();

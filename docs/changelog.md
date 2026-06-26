@@ -11,4 +11,4 @@
 - Added Modern-only redraw aggression controls: Classic, Normal, High, and Extreme.
 - Added diagnostics logging controls.
 - Added Reset Camera Location.
-- Added plugin data folder: Plugins/SC4-3DMouseCam/.
+- Added plugin data folder: Plugins/SC4-ModernCamera/.
