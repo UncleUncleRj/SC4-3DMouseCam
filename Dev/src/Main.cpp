@@ -495,6 +495,75 @@ bool IsRightClickScrollingActive()
     return g_IsRightMouseDown || ((GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0);
 }
 
+bool IsVirtualKeyDown(int key)
+{
+    return (GetAsyncKeyState(key) & 0x8000) != 0;
+}
+
+bool IsCommandShortcutModifierDown()
+{
+    return IsVirtualKeyDown(VK_CONTROL)
+        || IsVirtualKeyDown(VK_MENU)
+        || IsVirtualKeyDown(VK_LWIN)
+        || IsVirtualKeyDown(VK_RWIN);
+}
+
+bool IsCameraKeyboardFocus()
+{
+    cIGZWinMgrPtr winMgr;
+    if (!winMgr) {
+        return true;
+    }
+
+    cIGZWin* focusedWindow = winMgr->GZGetFocus();
+    if (!focusedWindow) {
+        return true;
+    }
+
+    const uint32_t focusedID = focusedWindow->GetID();
+    if (focusedID == kGZWin_SC4View3DWin || focusedID == kGZWin_SC4View3DSurface) {
+        return true;
+    }
+
+    cISC4AppPtr app;
+    if (!app) {
+        return true;
+    }
+
+    cIGZWin* mainWindow = app->GetMainWindow();
+    if (focusedWindow == mainWindow) {
+        return true;
+    }
+
+    cIGZWin* parentWindow = mainWindow ? mainWindow->GetChildWindowFromID(kGZWin_WinSC4App) : nullptr;
+    if (focusedWindow == parentWindow) {
+        return true;
+    }
+
+    cISC4View3DWin* view3D = nullptr;
+    bool cameraFocus = false;
+    if (parentWindow
+        && parentWindow->GetChildAs(
+            kGZWin_SC4View3DWin,
+            kGZIID_cISC4View3DWin,
+            reinterpret_cast<void**>(&view3D))) {
+        cIGZWin* viewWindow = view3D->AsIGZWin();
+        cameraFocus = focusedWindow == viewWindow
+            || (viewWindow && viewWindow->IsWinInChildChain(focusedWindow));
+        view3D->Release();
+    }
+
+    if (!cameraFocus) {
+        Logger::GetInstance().WriteLine(
+            LogLevel::Verbose,
+            "WASD keyboard pass-through: focused window is not the 3D view. Focus:{"
+            + DescribeGZWindow(focusedWindow)
+            + "}");
+    }
+
+    return cameraFocus;
+}
+
 bool IsWASDVirtualKey(WPARAM key, float& rightSteps, float& forwardSteps)
 {
     rightSteps = 0.0f;
@@ -547,6 +616,8 @@ bool ShouldCaptureWASDKeys()
     return g_IsCityLoaded
         && g_IsModernCamEnabled
         && g_Settings.wasdMovement
+        && !IsCommandShortcutModifierDown()
+        && IsCameraKeyboardFocus()
         && !IsRightClickScrollingActive();
 }
 
