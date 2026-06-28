@@ -98,7 +98,7 @@ Native UI scripts reference image resources with two IDs:
 image={group,instance}
 ```
 
-The resource type is not written in the UI script. UI/button images are DBPF resources with:
+The resource type is not written in the UI script. UI/button images use DBPF resources with:
 
 ```text
 Type:  0x856DDBAC
@@ -106,7 +106,9 @@ Group: value from the first `image={...}` field
 IID:   value from the second `image={...}` field
 ```
 
-The builder emits uncompressed SHPI/FSH payloads. The SHPI header is:
+SC4 loads these resources through its GIMEX image path. PNG is the usual source format for UI icons. The plugin packages selected PNG assets as compatible uncompressed SHPI/FSH payloads.
+
+The SHPI header is:
 
 | Offset | Size | Value | Meaning |
 | --- | ---: | --- | --- |
@@ -149,7 +151,7 @@ DXT3 data is 16 bytes per 4-by-4 pixel block:
 (width / 4) * (height / 4) * 16
 ```
 
-For `Dev/ui/moderncamera-menu-icon.png`, a 176-by-44 four-state strip, the DXT3 payload size is:
+For `Dev/ui/moderncamera-menu-icon.png`, a 176-by-44 four-state strip, the packaged DXT3 payload size is:
 
 ```text
 (176 / 4) * (44 / 4) * 16 = 7,744 bytes
@@ -316,7 +318,7 @@ and pass those deltas to `GZWinMoveTo`. Passing absolute coordinates causes cont
 
 ## Calling-convention and SDK hazards
 
-SC4 is a 32-bit application, so a wrong calling convention or virtual signature corrupts the stack immediately. Debug builds report this as `_RTC_CheckEsp`; release builds may simply crash.
+SC4 is a 32-bit application, so a wrong calling convention or virtual signature corrupts the stack immediately. Debug builds report this as `_RTC_CheckEsp`; release builds may simply crash. Free functions in the Windows executable commonly use `__cdecl`; class methods reached through vtables commonly use `__thiscall`. Validate each non-SDK entry point and vtable slot against the target Windows executable before use.
 
 Startup popup wrapper:
 
@@ -326,10 +328,12 @@ bool (__cdecl*)(cIGZString const& caption, cIGZString const& message)
 
 at game address `0x78DD80`. Ignore the Boolean return value. A `__stdcall` declaration caused an ESP mismatch after dismissing the popup.
 
-The following SDK declarations or reverse-engineered paths require ABI validation before use:
+Compiler and platform differences can change overload ordering and vtable layout. The vendored headers in `Dev/vendor/gzcom` are the declarations used by this project, but production use of untested UI virtual methods still requires targeted Windows v641 validation.
 
-- `cIGZWinCtrlMgr` programmatic control factories; `CreateLabel` caused a stack-balance failure.
-- `cIGZWin::SetArea(cRZRect)`, `cIGZWin::SetArea(left, top, right, bottom)`, and `CenterWindowInRect()`; production use requires targeted in-game validation.
+The following paths require ABI validation before production use:
+
+- `cIGZWinCtrlMgr` programmatic control factories. Production windows use authored UI script resources instead.
+- `cIGZWin::SetArea(cRZRect)`, `cIGZWin::SetArea(left, top, right, bottom)`, and `CenterWindowInRect()`.
 
 Manual centering is safe when the required movement is expressed as a relative `GZWinMoveTo` delta.
 
