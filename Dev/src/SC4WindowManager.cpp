@@ -1889,8 +1889,8 @@ void ControlLaboratoryWindow::AddControl(cIGZWin* window, cIGZUnknown* interface
 bool ControlLaboratoryWindow::BuildControls()
 {
 	// Controls are authored in the UI DAT and instantiated by SC4's own UI
-	// script service. The cIGZWinCtrlMgr factory methods are still incomplete
-	// reverse-engineered interfaces and caused an x86 stack-balance failure.
+	// script service. Production windows do not depend on cIGZWinCtrlMgr
+	// programmatic factory methods.
 	struct ScriptControl { uint32_t id; const char* name; bool fixed; };
 	const ScriptControl scriptControls[] = {
 		{ kCloseButtonID, "close", true },
@@ -2134,7 +2134,7 @@ void ControlLaboratoryWindow::ApplyScrollPosition()
 		{
 			// Despite its name, SC4's GZWinMoveTo applies a relative delta.
 			// Computing the delta from the current position makes scrolling
-			// deterministic and avoids the SDK's broken SetArea overloads.
+			// deterministic without resizing or re-anchoring the control.
 			control.window->GZWinMoveTo(deltaX, deltaY);
 		}
 		// SC4 does not clip child windows to the dialog bounds. Only show
