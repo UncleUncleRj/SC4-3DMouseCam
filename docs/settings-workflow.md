@@ -9,7 +9,7 @@ The floating camera button in the upper-right corner opens the main Camera Setti
 The main window contains:
 
 - Camera Mode: Modern and Classic.
-- Modern settings: WASD Movement, sensitivity sliders, Invert Vertical, Reset Camera Location, and Advanced Settings.
+- Modern settings: WASD Movement, rotation sensitivity, zoom sensitivity, panning speed, Invert Vertical, Reset Camera Location, and Advanced Settings.
 - Footer actions: Defaults, Show Changelog, and Close.
 
 Advanced Settings opens a child window for:
@@ -31,7 +31,7 @@ Classic mode:
 - leaves Advanced Settings available for diagnostics;
 - visually forces Advanced Settings redraw aggression to Classic.
 
-Classic mode must not erase the user's saved Modern-only preferences. WASD, sensitivity, invert vertical, and redraw aggression reappear with their saved values when the user switches back to Modern.
+Classic mode must not erase the user's saved Modern-only preferences. WASD, sensitivity, panning speed, invert vertical, and redraw aggression reappear with their saved values when the user switches back to Modern.
 
 Modern mode:
 
@@ -70,7 +70,7 @@ When WASD Movement is re-enabled while Modern camera is active, the plugin clear
 
 Sensitivity sliders update live but save with a short delay. This prevents a drag from writing many settings files in rapid succession.
 
-The delayed save log line should include the saved rotation and zoom sensitivity values. Per-step slider changes can remain verbose because they are noisy by nature.
+The delayed save log line should include the saved rotation, zoom, and panning speed values. Per-step slider changes can remain verbose because they are noisy by nature.
 
 ## Option Change Logging
 
@@ -82,7 +82,7 @@ Important log patterns:
 - `Settings UI: WASD Movement changed from On to Off.`
 - `Advanced Settings UI: Redraw Aggression changed from Normal to Extreme.`
 - `Advanced Settings UI: Diagnostics Logging changed from Normal to Verbose.`
-- `Settings UI: saved delayed settings after rotation sensitivity change; rotationSensitivity=... zoomSensitivity=...`
+- `Settings UI: saved delayed settings after rotation sensitivity change; rotationSensitivity=... zoomSensitivity=... panSensitivity=...`
 
 When diagnostics logging is set to Off, subsequent normal log lines may be intentionally suppressed.
 

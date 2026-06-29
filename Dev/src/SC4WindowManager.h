@@ -156,13 +156,14 @@ private:
 	void ApplySettingsChange(const char* reason, bool saveImmediately = true);
 	void FlushPendingSettingsSave();
 	void ScheduleSettingsSave(const char* reason);
-	float ReadSliderValueFromCursor(uint32_t sliderID, float fallback) const;
+	float ReadSliderValueFromCursor(uint32_t sliderID, float fallback, float minimum, float range) const;
 
 	SC4WindowManager* manager;
 	PluginSettings* settings;
 	const SC4WindowManagerCallbacks* callbacks;
 	uintptr_t delayedSaveTimerID;
 	bool delayedSavePending;
+	bool syncingControls;
 	std::string delayedSaveReason;
 };
 

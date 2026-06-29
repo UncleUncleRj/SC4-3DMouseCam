@@ -760,9 +760,10 @@ bool __fastcall HookedSetScrolling(cISC4View3DWin* view3D, void* edx, bool scrol
 		? "keyboard SetScrolling"
 		: (IsRightClickScrollingActive() ? "right mouse SetScrolling" : "native SetScrolling");
 	float adjustedX = x;
+	float adjustedZ = z;
 	bool blockedByBounds = false;
 	if (g_IsCityLoaded && g_IsModernCamEnabled && scrolling) {
-		g_CameraController.AdjustScrollForCityBounds(x, z, adjustedX, blockedByBounds, source);
+		g_CameraController.AdjustScrollForCityBounds(x, adjustedZ, adjustedX, blockedByBounds, source);
 		if (blockedByBounds) {
 			const bool stopped = original(view3D, false, 0.0f, 0.0f);
 			Logger::GetInstance().WriteLine(
@@ -771,12 +772,13 @@ bool __fastcall HookedSetScrolling(cISC4View3DWin* view3D, void* edx, bool scrol
 				+ source
 				+ " X:" + std::to_string(x)
 				+ " Z:" + std::to_string(z)
+				+ " AdjustedZ:" + std::to_string(adjustedZ)
 				+ " StopResult:" + (stopped ? "true" : "false"));
 			return stopped;
 		}
 	}
 
-	const bool result = original(view3D, scrolling, adjustedX, z);
+	const bool result = original(view3D, scrolling, adjustedX, adjustedZ);
 	Logger::GetInstance().WriteLine(
 		LogLevel::Verbose,
 		std::string("View3D SetScrolling observed. Source:")
@@ -785,6 +787,7 @@ bool __fastcall HookedSetScrolling(cISC4View3DWin* view3D, void* edx, bool scrol
 		+ " X:" + std::to_string(x)
 		+ " AdjustedX:" + std::to_string(adjustedX)
 		+ " Z:" + std::to_string(z)
+		+ " AdjustedZ:" + std::to_string(adjustedZ)
 		+ " Result:" + (result ? "true" : "false"));
 
 	return result;
@@ -1155,7 +1158,7 @@ bool ApplyKeyboardMovement(const char* source, LogLevel successLogLevel)
     const float speedMultiplier = ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0)
         ? kKeyboardPanBoostMultiplier
         : 1.0f;
-    const float scrollSpeed = kKeyboardPanNativeSpeed * speedMultiplier;
+    const float scrollSpeed = kKeyboardPanNativeSpeed * speedMultiplier * g_Settings.panSensitivity;
 
     g_IsApplyingKeyboardScrolling = true;
     const bool nativeScrollResult = view3D->SetScrolling(true, directionAngle, scrollSpeed);

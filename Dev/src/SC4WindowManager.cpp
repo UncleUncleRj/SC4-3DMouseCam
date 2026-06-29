@@ -15,6 +15,7 @@
 #include "cIGZWinBtn.h"
 #include "cIGZWinCtrlMgr.h"
 #include "cIGZWinGen.h"
+#include "cIGZWinSlider.h"
 #include "cIGZWinText.h"
 #include "cISC4App.h"
 #include "cRZAutoRefCount.h"
@@ -70,6 +71,7 @@ namespace
 	constexpr uint32_t kSettingsInvertOnButtonID = 0x3D0C0936;
 	constexpr uint32_t kSettingsInvertOffButtonID = 0x3D0C0937;
 	constexpr uint32_t kSettingsResetCameraButtonID = 0x3D0C0938;
+	constexpr uint32_t kSettingsPanSliderID = 0x3D0C0939;
 	constexpr uint32_t kSettingsRedrawOffButtonID = 0x3D0C0940;
 	constexpr uint32_t kSettingsRedrawNormalButtonID = 0x3D0C0941;
 	constexpr uint32_t kSettingsRedrawHighButtonID = 0x3D0C0942;
@@ -100,6 +102,10 @@ namespace
 	constexpr UINT kSettingsSliderSaveDelayMs = 200;
 	constexpr UINT kSettingsReopenDelayMs = 1;
 	constexpr UINT kDeferredWindowOpenDelayMs = 1;
+	constexpr float kSensitivityMin = 0.1f;
+	constexpr float kSensitivityRange = 2.9f;
+	constexpr float kPanSensitivityMin = 0.25f;
+	constexpr float kPanSensitivityRange = 2.5f;
 
 	SC4WindowManager* g_DelayedVersionNoticeManager = nullptr;
 	SettingsWindow* g_DelayedSettingsSaveWindow = nullptr;
@@ -258,6 +264,21 @@ namespace
 		std::ostringstream stream;
 		stream << std::fixed << std::setprecision(2) << value;
 		return stream.str();
+	}
+
+	int32_t SliderValueFromSetting(float value, float minimum, float range)
+	{
+		const float clamped = std::clamp(value, minimum, minimum + range);
+		return static_cast<int32_t>((clamped * 100.0f) + 0.5f);
+	}
+
+	void SetSliderValueFromSetting(cIGZWin* root, uint32_t sliderID, float value, float minimum, float range)
+	{
+		cRZAutoRefCount<cIGZWinSlider> slider;
+		if (root && root->GetChildAsRecursive(sliderID, GZIID_cIGZWinSlider, slider.AsPPVoid()))
+		{
+			slider->SetValue(SliderValueFromSetting(value, minimum, range));
+		}
 	}
 
 	void LogOptionChanged(
@@ -808,6 +829,7 @@ SettingsWindow::SettingsWindow()
 	callbacks(nullptr),
 	delayedSaveTimerID(0),
 	delayedSavePending(false),
+	syncingControls(false),
 	delayedSaveReason()
 {
 }
@@ -856,11 +878,30 @@ void SettingsWindow::SyncControlsFromSettings()
 	}
 
 	const uint32_t cameraModeIDs[2] = { kSettingsModernButtonID, kSettingsClassicButtonID };
+	syncingControls = true;
 	ApplyChoice(
 		settings->cameraMode == CameraMode::Modern ? kSettingsModernButtonID : kSettingsClassicButtonID,
 		cameraModeIDs,
 		2);
 	ApplyBooleanPair(kSettingsWASDOnButtonID, kSettingsWASDOffButtonID, settings->wasdMovement);
+	SetSliderValueFromSetting(
+		GetRootWindow(),
+		kSettingsRotationSliderID,
+		settings->rotationSensitivity,
+		kSensitivityMin,
+		kSensitivityRange);
+	SetSliderValueFromSetting(
+		GetRootWindow(),
+		kSettingsZoomSliderID,
+		settings->zoomSensitivity,
+		kSensitivityMin,
+		kSensitivityRange);
+	SetSliderValueFromSetting(
+		GetRootWindow(),
+		kSettingsPanSliderID,
+		settings->panSensitivity,
+		kPanSensitivityMin,
+		kPanSensitivityRange);
 	ApplyBooleanPair(kSettingsInvertOnButtonID, kSettingsInvertOffButtonID, settings->invertVertical);
 
 	const bool modernCameraActive = settings->cameraMode == CameraMode::Modern;
@@ -869,6 +910,7 @@ void SettingsWindow::SyncControlsFromSettings()
 		kSettingsWASDOffButtonID,
 		kSettingsRotationSliderID,
 		kSettingsZoomSliderID,
+		kSettingsPanSliderID,
 		kSettingsInvertOnButtonID,
 		kSettingsInvertOffButtonID,
 	};
@@ -877,6 +919,7 @@ void SettingsWindow::SyncControlsFromSettings()
 		modernOnlyControlIDs,
 		sizeof(modernOnlyControlIDs) / sizeof(modernOnlyControlIDs[0]),
 		modernCameraActive);
+	syncingControls = false;
 }
 
 void SettingsWindow::ApplySettingsChange(const char* reason, bool saveImmediately)
@@ -892,6 +935,7 @@ void SettingsWindow::ApplySettingsChange(const char* reason, bool saveImmediatel
 		+ " wasd=" + (settings->wasdMovement ? "true" : "false")
 		+ " rotationSensitivity=" + std::to_string(settings->rotationSensitivity)
 		+ " zoomSensitivity=" + std::to_string(settings->zoomSensitivity)
+		+ " panSensitivity=" + std::to_string(settings->panSensitivity)
 		+ " invertVertical=" + (settings->invertVertical ? "true" : "false")
 		+ " redrawAggression="
 		+ (settings->redrawAggression == RedrawAggression::Classic ? "Classic"
@@ -982,6 +1026,8 @@ void SettingsWindow::FlushPendingSettingsSave()
 			+ FormatSettingFloat(settings->rotationSensitivity)
 			+ " zoomSensitivity="
 			+ FormatSettingFloat(settings->zoomSensitivity)
+			+ " panSensitivity="
+			+ FormatSettingFloat(settings->panSensitivity)
 			+ ".");
 	}
 }
@@ -991,7 +1037,7 @@ void SettingsWindow::OnDelayedSettingsSaveTimer()
 	FlushPendingSettingsSave();
 }
 
-float SettingsWindow::ReadSliderValueFromCursor(uint32_t sliderID, float fallback) const
+float SettingsWindow::ReadSliderValueFromCursor(uint32_t sliderID, float fallback, float minimum, float range) const
 {
 	cIGZWin* root = GetRootWindow();
 	cIGZWin* slider = root ? root->GetChildWindowFromIDRecursive(sliderID) : nullptr;
@@ -1014,7 +1060,7 @@ float SettingsWindow::ReadSliderValueFromCursor(uint32_t sliderID, float fallbac
 		static_cast<float>(localX - left) / static_cast<float>(width),
 		0.0f,
 		1.0f);
-	return 0.1f + (ratio * 2.9f);
+	return minimum + (ratio * range);
 }
 
 bool SettingsWindow::OnCommandMessage(cGZMessage& msg)
@@ -1026,6 +1072,14 @@ bool SettingsWindow::OnCommandMessage(cGZMessage& msg)
 
 	if (msg.dwData1 == kCommandValueChanged)
 	{
+		if (syncingControls
+			&& (msg.dwData2 == kSettingsRotationSliderID
+				|| msg.dwData2 == kSettingsZoomSliderID
+				|| msg.dwData2 == kSettingsPanSliderID))
+		{
+			return true;
+		}
+
 		if (msg.dwData2 == kSettingsRotationSliderID)
 		{
 			if (settings->cameraMode != CameraMode::Modern)
@@ -1038,7 +1092,9 @@ bool SettingsWindow::OnCommandMessage(cGZMessage& msg)
 			const float previous = settings->rotationSensitivity;
 			settings->rotationSensitivity = ReadSliderValueFromCursor(
 				kSettingsRotationSliderID,
-				settings->rotationSensitivity);
+				settings->rotationSensitivity,
+				kSensitivityMin,
+				kSensitivityRange);
 			LogOptionChanged(
 				"Settings UI",
 				"Rotation Sensitivity",
@@ -1060,7 +1116,9 @@ bool SettingsWindow::OnCommandMessage(cGZMessage& msg)
 			const float previous = settings->zoomSensitivity;
 			settings->zoomSensitivity = ReadSliderValueFromCursor(
 				kSettingsZoomSliderID,
-				settings->zoomSensitivity);
+				settings->zoomSensitivity,
+				kSensitivityMin,
+				kSensitivityRange);
 			LogOptionChanged(
 				"Settings UI",
 				"Zoom Sensitivity",
@@ -1068,6 +1126,30 @@ bool SettingsWindow::OnCommandMessage(cGZMessage& msg)
 				FormatSettingFloat(settings->zoomSensitivity),
 				LogLevel::Verbose);
 			ApplySettingsChange("zoom sensitivity change", false);
+			return true;
+		}
+		if (msg.dwData2 == kSettingsPanSliderID)
+		{
+			if (settings->cameraMode != CameraMode::Modern)
+			{
+				Logger::GetInstance().WriteLine(
+					LogLevel::Verbose,
+					"Settings UI: ignored panning speed slider while Classic camera is selected.");
+				return true;
+			}
+			const float previous = settings->panSensitivity;
+			settings->panSensitivity = ReadSliderValueFromCursor(
+				kSettingsPanSliderID,
+				settings->panSensitivity,
+				kPanSensitivityMin,
+				kPanSensitivityRange);
+			LogOptionChanged(
+				"Settings UI",
+				"Panning Speed",
+				FormatSettingFloat(previous),
+				FormatSettingFloat(settings->panSensitivity),
+				LogLevel::Verbose);
+			ApplySettingsChange("panning speed change", false);
 			return true;
 		}
 	}
@@ -1272,6 +1354,7 @@ bool SettingsWindow::OnButtonClick(uint32_t controlID)
 			const bool previousWASD = settings->wasdMovement;
 			const float previousRotationSensitivity = settings->rotationSensitivity;
 			const float previousZoomSensitivity = settings->zoomSensitivity;
+			const float previousPanSensitivity = settings->panSensitivity;
 			const bool previousInvertVertical = settings->invertVertical;
 			const RedrawAggression previousRedrawAggression = settings->redrawAggression;
 			const DebugLogging previousDebugLogging = settings->debugLogging;
@@ -1296,6 +1379,11 @@ bool SettingsWindow::OnButtonClick(uint32_t controlID)
 				"Zoom Sensitivity",
 				FormatSettingFloat(previousZoomSensitivity),
 				FormatSettingFloat(settings->zoomSensitivity));
+			LogOptionChanged(
+				"Settings UI",
+				"Panning Speed",
+				FormatSettingFloat(previousPanSensitivity),
+				FormatSettingFloat(settings->panSensitivity));
 			LogOptionChanged(
 				"Settings UI",
 				"Invert Vertical",

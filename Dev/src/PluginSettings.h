@@ -43,6 +43,7 @@ public:
 	bool wasdMovement;
 	float rotationSensitivity;
 	float zoomSensitivity;
+	float panSensitivity;
 	bool invertVertical;
 	RedrawAggression redrawAggression;
 	DebugLogging debugLogging;

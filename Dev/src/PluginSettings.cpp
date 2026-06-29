@@ -108,6 +108,7 @@ void PluginSettings::RestoreDefaults()
 	wasdMovement = true;
 	rotationSensitivity = 1.0f;
 	zoomSensitivity = 1.0f;
+	panSensitivity = 1.0f;
 	invertVertical = false;
 	redrawAggression = RedrawAggression::Normal;
 	debugLogging = DebugLogging::Normal;
@@ -143,6 +144,7 @@ bool PluginSettings::Load(const std::filesystem::path& settingsPath)
 	TryReadBool(json, "wasdMovement", wasdMovement);
 	TryReadFloat(json, "rotationSensitivity", rotationSensitivity);
 	TryReadFloat(json, "zoomSensitivity", zoomSensitivity);
+	TryReadFloat(json, "panSensitivity", panSensitivity);
 	TryReadBool(json, "invertVertical", invertVertical);
 
 	if (TryReadString(json, "redrawAggression", value))
@@ -163,6 +165,7 @@ bool PluginSettings::Load(const std::filesystem::path& settingsPath)
 
 	rotationSensitivity = std::clamp(rotationSensitivity, 0.1f, 3.0f);
 	zoomSensitivity = std::clamp(zoomSensitivity, 0.1f, 3.0f);
+	panSensitivity = std::clamp(panSensitivity, 0.25f, 2.75f);
 
 	Logger::GetInstance().WriteLine(LogLevel::Info, "Loaded settings from " + path.string());
 	return true;
@@ -191,6 +194,7 @@ bool PluginSettings::Save() const
 		<< "    \"wasdMovement\": " << (wasdMovement ? "true" : "false") << ",\n"
 		<< "    \"rotationSensitivity\": " << rotationSensitivity << ",\n"
 		<< "    \"zoomSensitivity\": " << zoomSensitivity << ",\n"
+		<< "    \"panSensitivity\": " << panSensitivity << ",\n"
 		<< "    \"invertVertical\": " << (invertVertical ? "true" : "false") << "\n"
 		<< "  },\n"
 		<< "  \"rendering\": {\n"
