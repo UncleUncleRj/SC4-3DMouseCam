@@ -54,18 +54,21 @@ When Classic camera mode is selected, the Advanced Settings redraw group shows C
 
 ## WASD Movement
 
-WASD movement is a Modern camera feature. When Modern camera and WASD Movement are enabled:
+WASD Movement is a Modern camera feature. When Modern camera and WASD Movement are enabled:
 
 - W/A/S/D key input is consumed before the game can process its default actions.
 - movement is timer-driven, not key-repeat driven, so it starts while held and stops immediately on key release;
 - Shift + WASD applies the configured boost multiplier;
+- the panning speed slider applies to WASD movement;
 - movement uses the same camera bounds as the other Modern camera movement paths;
 - movement is disabled while right-click scrolling is active;
 - movement remains active during M3 camera maneuvering and zoom.
 
-When WASD Movement is off, or Classic camera is active, the plugin stops consuming those keys and returns them to the game.
+When WASD Movement is off, or Classic camera is active, the plugin stops consuming W/A/S/D and returns those keys to the game.
 
 When WASD Movement is re-enabled while Modern camera is active, the plugin clears the current native view tool before consuming WASD again. This prevents a tool selected through SC4's native W/A/S/D shortcuts from staying active while Modern camera movement starts.
+
+SC4's standard arrow-key panning remains available independently of the WASD Movement setting. In Modern camera mode, arrow-key panning and WASD Movement use the same internal `SetScrolling` path so panning speed, Shift boost, focus gating, and map-boundary handling stay consistent.
 
 ## Slider Saves
 

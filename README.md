@@ -22,11 +22,11 @@ Disc and retail builds are not supported.
 
 ## Controls
 
-- - Hold SHIFT to move faster
-- **WASD**: Moves the camera. This can be disabled in-game.
+- **WASD Movement**: Pans the camera in Modern camera mode. This can be disabled in-game.
+- **Shift + WASD**: Pans faster.
 - **M3 + horizontal drag**: Rotates the camera.
 - **M3 + vertical drag**: Adjusts the camera pitch.
-- - In-game Option to Invert Vertical controls
+- **Invert Vertical**: In-game option for vertical M3 pitch controls.
 - **Mouse wheel**: New smooth zoom experience.
 - **Ctrl+Alt+F8**: Dumps the current camera and renderer state to `Plugins\SC4-ModernCamera\SC4-ModernCamera.log` for debugging.
 
@@ -48,6 +48,7 @@ These files can be safely ignored or deleted.
 - [SimCity 4 default camera behavior](docs/default-camera.md) records native zoom, pitch, yaw, and rotation behavior.
 - [Region preview save fix](docs/region-preview-save-fix.md) documents the save lifecycle integration, rejected hook approaches, and normalization design.
 - [Settings window workflow](docs/settings-workflow.md) documents in-game settings behavior, Classic/Modern mode rules, WASD capture, redraw options, logging, and child-window z-order workflow.
+- [Camera zoom and rotation design](docs/camera-zoom-and-rotation-design.md) documents zoom, pitch, yaw, rotation, WASD movement, and map-boundary behavior.
 - [SimCity 4 native UI research](docs/native-ui-research.md) records control recipes, message IDs, scrolling behavior, ABI constraints, and companion-DAT workflow.
 
 ## Building

@@ -62,9 +62,10 @@ This produces all desired view types without a forced zoom/pitch curve:
 ### WASD movement
 
 - Optional in Modern camera mode.
-- Moves the camera forward, back, left, and right while the key is held.
+- Moves the camera forward, back, left, and right while W/A/S/D is held.
 - Uses a timer-driven held-key state, not operating-system key repeat, so movement stops immediately on key release.
 - Shift applies a movement-speed boost.
+- The panning speed setting applies to WASD movement, not right-mouse panning.
 - Uses the same playable-map boundary rules as the other Modern camera movement paths.
 - Does not engage during right-click scrolling.
 - Remains active during M3 camera maneuvering and zoom.
@@ -128,8 +129,12 @@ healthy and broken states before assigning unverified meanings to fields.
   does not bounce merely to keep every map corner inside the viewport.
 - Optional WASD movement consumes game W/A/S/D input only while Modern camera mode
   and WASD Movement are enabled. Movement is smooth while held, stops on key
-  release, supports Shift boost, and respects the same map bounds as other camera
-  movement.
+  release, supports Shift boost, uses the panning speed setting, and respects
+  the same map bounds as other camera movement.
+- SC4's standard arrow-key panning remains available independently of the WASD
+  Movement setting. In Modern camera mode, WASD movement and arrow-key panning
+  share the same internal `SetScrolling` path so focus gating, panning speed,
+  Shift boost, and map-boundary handling stay consistent.
 - Native yaw uses a `[-70 degrees, +30 degrees]` hysteresis window. Building
   side meshes were observed disappearing when an exact 90-degree window mapped
   a healthy low-end orientation directly onto the opposite high-end boundary.
