@@ -130,6 +130,14 @@ namespace
 		return std::isfinite(value) && value > 1.0f;
 	}
 
+	bool IsInsideCityExtent(float value, float extent)
+	{
+		return IsUsableCityExtent(extent)
+			&& std::isfinite(value)
+			&& value >= 0.0f
+			&& value <= extent;
+	}
+
 	float ClampToCityExtent(float value, float extent)
 	{
 		if (!IsUsableCityExtent(extent) || !std::isfinite(value)) {
@@ -139,7 +147,7 @@ namespace
 		return std::clamp(value, 0.0f, extent);
 	}
 
-	bool ClampKeyboardPanDeltaToCityBounds(
+	bool ClampPanDeltaToCityBounds(
 		const SC4CameraControlLayout& cameraControl,
 		float& deltaX,
 		float& deltaZ)
@@ -617,16 +625,29 @@ bool SC4CameraController::ApplyDelta(float pitchDelta, float yawDelta, bool upda
 	});
 }
 
-bool SC4CameraController::PanByKeyboard(float rightSteps, float forwardSteps)
+bool SC4CameraController::AdjustScrollForCityBounds(
+	float directionAngle,
+	float speed,
+	float& adjustedDirectionAngle,
+	bool& blocked,
+	const char* source)
 {
-	if (rightSteps == 0.0f && forwardSteps == 0.0f) {
-		return true;
+	adjustedDirectionAngle = directionAngle;
+	blocked = false;
+
+	if (!std::isfinite(directionAngle)) {
+		return false;
 	}
 
 	return WithRenderer([&](cISC43DRender* renderer) {
 		SC4CameraControlLayout* cameraControl = reinterpret_cast<SC4CameraControlLayout*>(renderer->GetCameraControl());
 		if (!cameraControl) {
-			Logger::GetInstance().WriteLine(LogLevel::Error, "Failed to get SC4 camera control for keyboard pan.");
+			Logger::GetInstance().WriteLine(LogLevel::Error, "Failed to get SC4 camera control for scroll bounds preflight.");
+			return false;
+		}
+
+		if (!std::isfinite(cameraControl->viewTargetPosition.fX)
+			|| !std::isfinite(cameraControl->viewTargetPosition.fZ)) {
 			return false;
 		}
 
@@ -640,7 +661,7 @@ bool SC4CameraController::PanByKeyboard(float rightSteps, float forwardSteps)
 			cameraControl->groundRayDirection.fX,
 			cameraControl->groundRayDirection.fZ);
 		if (rightLength <= 0.0001f || forwardLength <= 0.0001f) {
-			Logger::GetInstance().WriteLine(LogLevel::Warning, "Camera Keyboard Pan: camera basis was invalid.");
+			Logger::GetInstance().WriteLine(LogLevel::Warning, "Camera Scroll Bounds: camera basis was invalid.");
 			return false;
 		}
 
@@ -649,33 +670,115 @@ bool SC4CameraController::PanByKeyboard(float rightSteps, float forwardSteps)
 		const float forwardX = cameraControl->groundRayDirection.fX / forwardLength;
 		const float forwardZ = cameraControl->groundRayDirection.fZ / forwardLength;
 
+		const float rightSteps = std::cos(directionAngle);
+		const float forwardSteps = -std::sin(directionAngle);
 		const int32_t zoomIndex = std::clamp(cameraControl->zoom, 0, static_cast<int32_t>(kZoomCount - 1));
-		float stepSize = cameraControl->zoomStepWorld[zoomIndex];
-		if (!std::isfinite(stepSize) || stepSize <= 0.0f) {
-			stepSize = (std::max)(8.0f, cameraControl->orthoScale * 0.02f);
+		float probeDistance = cameraControl->zoomStepWorld[zoomIndex] * (std::max)(std::abs(speed), 0.05f);
+		if (!std::isfinite(probeDistance) || probeDistance <= 0.0f) {
+			probeDistance = (std::max)(8.0f, cameraControl->orthoScale * 0.02f);
 		}
 
-		const float requestedDeltaX = ((rightX * rightSteps) + (forwardX * forwardSteps)) * stepSize;
-		const float requestedDeltaZ = ((rightZ * rightSteps) + (forwardZ * forwardSteps)) * stepSize;
+		const float requestedDeltaX = ((rightX * rightSteps) + (forwardX * forwardSteps)) * probeDistance;
+		const float requestedDeltaZ = ((rightZ * rightSteps) + (forwardZ * forwardSteps)) * probeDistance;
 		float deltaX = requestedDeltaX;
 		float deltaZ = requestedDeltaZ;
-		const bool clampedToCityBounds = ClampKeyboardPanDeltaToCityBounds(*cameraControl, deltaX, deltaZ);
+		const bool clampedToCityBounds = ClampPanDeltaToCityBounds(*cameraControl, deltaX, deltaZ);
+		if (!clampedToCityBounds) {
+			return true;
+		}
 
-		if (!std::isfinite(deltaX) || !std::isfinite(deltaZ)) {
-			Logger::GetInstance().WriteLine(LogLevel::Warning, "Camera Keyboard Pan: computed delta was invalid.");
+		const float requestedDotAdjusted = (requestedDeltaX * deltaX) + (requestedDeltaZ * deltaZ);
+		const float adjustedDistance = GetHorizontalLength(deltaX, deltaZ);
+		if (!std::isfinite(adjustedDistance)
+			|| adjustedDistance <= 0.0001f
+			|| !std::isfinite(requestedDotAdjusted)
+			|| requestedDotAdjusted <= 0.0f) {
+			blocked = true;
+			Logger::GetInstance().WriteLine(
+				LogLevel::Verbose,
+				std::string("Camera Scroll Bounds: blocked outward scroll at city bounds. Source:")
+				+ (source ? source : "unknown")
+				+ " DirectionAngle:" + std::to_string(directionAngle)
+				+ " Speed:" + std::to_string(speed)
+				+ " RequestedDeltaX:" + std::to_string(requestedDeltaX)
+				+ " RequestedDeltaZ:" + std::to_string(requestedDeltaZ)
+				+ " AdjustedDeltaX:" + std::to_string(deltaX)
+				+ " AdjustedDeltaZ:" + std::to_string(deltaZ));
+			return true;
+		}
+
+		const float adjustedRight = (deltaX * rightX) + (deltaZ * rightZ);
+		const float adjustedForward = (deltaX * forwardX) + (deltaZ * forwardZ);
+		const float adjustedInputLength = GetHorizontalLength(adjustedRight, adjustedForward);
+		if (!std::isfinite(adjustedInputLength) || adjustedInputLength <= 0.0001f) {
+			blocked = true;
+			return true;
+		}
+
+		adjustedDirectionAngle = std::atan2(-adjustedForward, adjustedRight);
+		Logger::GetInstance().WriteLine(
+			LogLevel::Verbose,
+			std::string("Camera Scroll Bounds: adjusted native scroll along city edge. Source:")
+			+ (source ? source : "unknown")
+			+ " DirectionAngle:" + std::to_string(directionAngle)
+			+ " AdjustedDirectionAngle:" + std::to_string(adjustedDirectionAngle)
+			+ " RequestedDeltaX:" + std::to_string(requestedDeltaX)
+			+ " RequestedDeltaZ:" + std::to_string(requestedDeltaZ)
+			+ " AdjustedDeltaX:" + std::to_string(deltaX)
+			+ " AdjustedDeltaZ:" + std::to_string(deltaZ));
+		return true;
+	});
+}
+
+bool SC4CameraController::EnsureTargetNearCityCenterIfOutOfBounds(const char* source)
+{
+	return WithRenderer([&](cISC43DRender* renderer) {
+		SC4CameraControlLayout* cameraControl = reinterpret_cast<SC4CameraControlLayout*>(renderer->GetCameraControl());
+		if (!cameraControl) {
+			Logger::GetInstance().WriteLine(LogLevel::Warning, "Camera recenter: camera control unavailable.");
 			return false;
 		}
 
-		if (deltaX == 0.0f && deltaZ == 0.0f) {
+		if (!IsUsableCityExtent(cameraControl->citySizeX) || !IsUsableCityExtent(cameraControl->citySizeZ)) {
 			Logger::GetInstance().WriteLine(
-				LogLevel::Info,
-				"Camera Keyboard Pan: clamped at city bounds. RightSteps:" + std::to_string(rightSteps)
-				+ " ForwardSteps:" + std::to_string(forwardSteps)
-				+ " StepSize:" + std::to_string(stepSize)
-				+ " RequestedDeltaX:" + std::to_string(requestedDeltaX)
-				+ " RequestedDeltaZ:" + std::to_string(requestedDeltaZ));
+				LogLevel::Warning,
+				"Camera recenter: unusable city extents. Source:"
+				+ std::string(source ? source : "unknown")
+				+ " CitySizeX:" + std::to_string(cameraControl->citySizeX)
+				+ " CitySizeZ:" + std::to_string(cameraControl->citySizeZ));
+			return false;
+		}
+
+		const bool targetInside = IsInsideCityExtent(cameraControl->viewTargetPosition.fX, cameraControl->citySizeX)
+			&& IsInsideCityExtent(cameraControl->viewTargetPosition.fZ, cameraControl->citySizeZ);
+		if (targetInside) {
+			Logger::GetInstance().WriteLine(
+				LogLevel::Verbose,
+				"Camera recenter: target already inside city bounds. Source:"
+				+ std::string(source ? source : "unknown")
+				+ " ViewTarget[" + FormatVector(cameraControl->viewTargetPosition) + "]");
 			return true;
 		}
+
+		if (!std::isfinite(cameraControl->viewTargetPosition.fX)
+			|| !std::isfinite(cameraControl->viewTargetPosition.fZ)) {
+			Logger::GetInstance().WriteLine(
+				LogLevel::Warning,
+				"Camera recenter: target was not finite. Source:"
+				+ std::string(source ? source : "unknown")
+				+ " ViewTarget[" + FormatVector(cameraControl->viewTargetPosition) + "]");
+			return false;
+		}
+
+		EnsureNativeCameraStateCaptured(*cameraControl);
+		SyncAngles(*cameraControl);
+
+		const cS3DVector3 oldViewTarget = cameraControl->viewTargetPosition;
+		const cS3DVector3 oldCameraPosition = cameraControl->cameraPosition;
+		const float targetX = cameraControl->citySizeX * 0.5f;
+		const float targetZ = cameraControl->citySizeZ * 0.5f;
+		const float deltaX = targetX - cameraControl->viewTargetPosition.fX;
+		const float deltaZ = targetZ - cameraControl->viewTargetPosition.fZ;
 
 		cameraControl->cameraPlaneOrigin.fX += deltaX;
 		cameraControl->cameraPlaneOrigin.fZ += deltaZ;
@@ -685,29 +788,27 @@ bool SC4CameraController::PanByKeyboard(float rightSteps, float forwardSteps)
 		cameraControl->cameraPosition.fZ += deltaZ;
 		cameraControl->viewTargetPosition.fX += deltaX;
 		cameraControl->viewTargetPosition.fZ += deltaZ;
-		cameraControl->viewTargetVelocity.fX = 0.0f;
-		cameraControl->viewTargetVelocity.fY = 0.0f;
-		cameraControl->viewTargetVelocity.fZ = 0.0f;
+		cameraControl->viewTargetVelocity = {};
 		cameraControl->cameraOffset.fX += deltaX;
 		cameraControl->cameraOffset.fZ += deltaZ;
-
-		ApplyPitchOverride(currentPitch);
-		ApplyYawOverride(currentYaw);
 		cameraControl->pitch = currentPitch;
 		cameraControl->yaw = currentYaw;
 
 		const bool result = Refresh(*cameraControl);
 		Logger::GetInstance().WriteLine(
-			LogLevel::Info,
-			"Camera Keyboard Pan: RightSteps:" + std::to_string(rightSteps)
-			+ " ForwardSteps:" + std::to_string(forwardSteps)
-			+ " StepSize:" + std::to_string(stepSize)
-			+ " RequestedDeltaX:" + std::to_string(requestedDeltaX)
-			+ " RequestedDeltaZ:" + std::to_string(requestedDeltaZ)
-			+ " DeltaX:" + std::to_string(deltaX)
-			+ " DeltaZ:" + std::to_string(deltaZ)
-			+ " Clamped:" + std::to_string(clampedToCityBounds ? 1 : 0)
+			result ? LogLevel::Info : LogLevel::Warning,
+			"Camera recenter: moved off-map target near city center. Source:"
+			+ std::string(source ? source : "unknown")
+			+ " OldViewTarget[" + FormatVector(oldViewTarget)
+			+ "] NewViewTarget[" + FormatVector(cameraControl->viewTargetPosition)
+			+ "] OldCameraPosition[" + FormatVector(oldCameraPosition)
+			+ "] NewCameraPosition[" + FormatVector(cameraControl->cameraPosition)
+			+ "] CitySizeX:" + std::to_string(cameraControl->citySizeX)
+			+ " CitySizeZ:" + std::to_string(cameraControl->citySizeZ)
 			+ " Result:" + std::to_string(result ? 1 : 0));
+		if (result) {
+			renderer->ForceFullRedraw();
+		}
 		return result;
 	});
 }
